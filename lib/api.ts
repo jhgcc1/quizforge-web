@@ -1,4 +1,8 @@
-/** Browser-side API client: talks to the BFF, retries safely, and keeps Idempotency-Keys stable across retries. */
+/**
+ * Browser-side API client: talks to the BFF, retries safely, keeps Idempotency-Keys stable across retries, and
+ * validates every successful response against the schema it was given (shared with the API through @quizforge/core).
+ */
+import type { ZodTypeAny, z } from "zod";
 
 export class ApiError extends Error {
   constructor(
@@ -26,7 +30,10 @@ export interface ApiOptions {
 /** Only transient failures are retried (network, 429, 5xx); 4xx are the caller's problem. */
 const retryable = (status: number) => status === 429 || status === 502 || status === 503 || status === 504;
 
-export async function api<T>(path: string, opts: ApiOptions = {}): Promise<{ data: T; replayed: boolean; status: number }> {
+export async function api<S extends ZodTypeAny = ZodTypeAny>(path: string, opts: ApiOptions & {
+    /** Response contract. A body that does not match is rejected instead of being trusted. */
+    schema?: S;
+  } = {}): Promise<{ data: z.output<S>; replayed: boolean; status: number }> {
   const method = opts.method ?? "GET";
   const maxRetries = opts.retries ?? (method === "GET" || opts.idempotencyKey || method === "PUT" ? 3 : 0);
   for (let attempt = 0; ; attempt++) {
@@ -65,7 +72,12 @@ export async function api<T>(path: string, opts: ApiOptions = {}): Promise<{ dat
       const e = (json as { error?: { code?: string; message?: string; details?: unknown } } | null)?.error;
       throw new ApiError(res.status, e?.code ?? "error", e?.message ?? `Request failed (${res.status})`, e?.details);
     }
-    return { data: json as T, replayed: res.headers.get("idempotency-replayed") === "true", status: res.status };
+    if (opts.schema) {
+      const parsed = opts.schema.safeParse(json);
+      if (!parsed.success) throw new ApiError(502, "bad_response", "The server sent an unexpected response. Try again in a moment.", parsed.error.issues.slice(0, 3));
+      return { data: parsed.data, replayed: res.headers.get("idempotency-replayed") === "true", status: res.status };
+    }
+    return { data: json as z.output<S>, replayed: res.headers.get("idempotency-replayed") === "true", status: res.status };
   }
 }
 
@@ -78,48 +90,6 @@ const safeJson = (s: string) => {
   }
 };
 
-/* ---------- response types (kept in sync with the API by hand; no server code is imported) ---------- */
+/* Response types come from the shared schemas, so the browser and the API cannot drift. */
+export type { AttemptResult, CatalogEntry, PublicQuestion, QuizSummary, SavedAnswer } from "@quizforge/core/schemas";
 export type QuizStatus = "queued" | "generating" | "ready" | "failed";
-export interface QuizSummary {
-  id: string;
-  status: QuizStatus;
-  sourceUrl: string;
-  topic: string | null;
-  numQuestions: number;
-  strategyRequested: string;
-  strategyUsed: string | null;
-  critique: boolean;
-  error: string | null;
-  createdAt: string;
-}
-export interface PublicQuestion {
-  id: string;
-  position: number;
-  prompt: string;
-  type: "single" | "multiple";
-  difficulty: "easy" | "medium" | "hard";
-  options: { id: string; position: number; text: string }[];
-}
-export interface SavedAnswer {
-  questionId: string;
-  optionIds: string[];
-  revision: number;
-}
-export interface AttemptResult {
-  attemptId: string;
-  quizId: string;
-  status: "in_progress" | "submitted";
-  finalScore: number | null;
-  percent: number | null;
-  questions: {
-    id: string;
-    position: number;
-    prompt: string;
-    type: "single" | "multiple";
-    explanation: string;
-    sourceQuote: string;
-    score: number | null;
-    weight: number | null;
-    options: { id: string; position: number; text: string; isCorrect: boolean; selected: boolean }[];
-  }[];
-}

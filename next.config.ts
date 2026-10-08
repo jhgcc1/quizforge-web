@@ -19,6 +19,8 @@ const config: NextConfig = {
   ...(process.env.NEXT_OUTPUT === "standalone" ? { output: "standalone" as const } : {}),
   poweredByHeader: false,
   reactStrictMode: true,
+  // shared request/response schemas are TypeScript source in the workspace
+  transpilePackages: ["@quizforge/core"],
   outputFileTracingRoot: path.join(__dirname, "../../"),
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { QuizListSchema } from "@quizforge/core/schemas";
 import { api, type QuizSummary } from "@/lib/api";
 
 const host = (u: string) => {
@@ -15,7 +16,7 @@ export function QuizList() {
     let timer: ReturnType<typeof setTimeout>;
     const load = async () => {
       try {
-        const { data } = await api<{ quizzes: QuizSummary[] }>("/v1/quizzes");
+        const { data } = await api("/v1/quizzes", { schema: QuizListSchema });
         if (!alive) return;
         setQuizzes(data.quizzes);
         setError(null);

@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AttemptWithAnswersSchema, QuizWithQuestionsSchema, SaveAnswerResponseSchema, SubmitResponseSchema } from "@quizforge/core/schemas";
 import { ApiError, api, newKey, type AttemptResult, type PublicQuestion, type QuizSummary, type SavedAnswer } from "@/lib/api";
 import { ResultView } from "./ResultView";
 
@@ -26,7 +27,7 @@ export function QuizRunner({ quizId }: { quizId: string }) {
     let n = 0;
     const tick = async () => {
       try {
-        const { data } = await api<{ quiz: QuizSummary; questions: PublicQuestion[] }>(`/v1/quizzes/${quizId}`, { signal: ctrl.signal });
+        const { data } = await api(`/v1/quizzes/${quizId}`, { signal: ctrl.signal, schema: QuizWithQuestionsSchema });
         setQuiz(data.quiz);
         setQuestions(data.questions);
         if (data.quiz.status === "queued" || data.quiz.status === "generating") timer = setTimeout(tick, Math.min(5000, 1500 * 1.3 ** n++));
@@ -44,7 +45,7 @@ export function QuizRunner({ quizId }: { quizId: string }) {
     setActionError(null);
     try {
       // The server returns the in-progress attempt if there is one, so reloading never loses answers.
-      const { data } = await api<{ attempt: { id: string }; answers: SavedAnswer[] }>(`/v1/quizzes/${quizId}/attempts`, { method: "POST", body: {}, idempotencyKey: startKey.current });
+      const { data } = await api(`/v1/quizzes/${quizId}/attempts`, { method: "POST", body: {}, idempotencyKey: startKey.current, schema: AttemptWithAnswersSchema });
       setAttemptId(data.attempt.id);
       setAnswers(Object.fromEntries(data.answers.map((a) => [a.questionId, { optionIds: a.optionIds, revision: a.revision, save: "saved" as Save }])));
       const firstOpen = questions.findIndex((q) => !data.answers.some((a) => a.questionId === q.id));
@@ -60,7 +61,7 @@ export function QuizRunner({ quizId }: { quizId: string }) {
     (qid: string, optionIds: string[], revision: number) => {
       if (!attemptId) return;
       setAnswers((a) => ({ ...a, [qid]: { optionIds, revision, save: "saving" } }));
-      const p = api(`/v1/attempts/${attemptId}/answers/${qid}`, { method: "PUT", body: { optionIds, revision } })
+      const p = api(`/v1/attempts/${attemptId}/answers/${qid}`, { method: "PUT", body: { optionIds, revision }, schema: SaveAnswerResponseSchema })
         .then(() => setAnswers((a) => (a[qid]?.revision === revision ? { ...a, [qid]: { optionIds, revision, save: "saved" } } : a)))
         .catch(() => setAnswers((a) => (a[qid]?.revision === revision ? { ...a, [qid]: { optionIds, revision, save: "error" } } : a)))
         .finally(() => pending.current.delete(p));
@@ -83,7 +84,7 @@ export function QuizRunner({ quizId }: { quizId: string }) {
       await Promise.allSettled([...pending.current]);
       const failed = Object.entries(answers).filter(([, a]) => a.save === "error");
       if (failed.length) throw new Error("Some answers could not be saved. Use “Retry” on the highlighted questions, then submit again.");
-      const { data } = await api<{ result: AttemptResult }>(`/v1/attempts/${attemptId}/submit`, { method: "POST", body: {}, idempotencyKey: `submit-${attemptId}` });
+      const { data } = await api(`/v1/attempts/${attemptId}/submit`, { method: "POST", body: {}, idempotencyKey: `submit-${attemptId}`, schema: SubmitResponseSchema });
       setResult(data.result);
     } catch (e) {
       setActionError((e as Error).message);

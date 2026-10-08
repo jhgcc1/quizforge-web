@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { accessToken, csrfOk, setSession, unauthorized } from "@/lib/bff";
 import { webConfig } from "@/lib/config";
+import { validateBody } from "@/lib/validate";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,8 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   for (const h of PASS_REQUEST) if (req.headers.get(h)) headers.set(h, req.headers.get(h)!);
 
   const body = req.method === "GET" || req.method === "HEAD" ? undefined : await req.text();
+  const rejected = validateBody(req.method, path, body);
+  if (rejected) return NextResponse.json(rejected.body, { status: rejected.status });
   let upstream: Response;
   try {
     upstream = await fetch(`${cfg.apiUrl}/${path.join("/")}${req.nextUrl.search}`, {

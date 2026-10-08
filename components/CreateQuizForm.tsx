@@ -1,17 +1,18 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ApiError, api, newKey, type QuizSummary } from "@/lib/api";
+import { CatalogResponseSchema, CreateQuizBodySchema, QuizEnvelopeSchema } from "@quizforge/core/schemas";
+import { ApiError, api, newKey, type CatalogEntry } from "@/lib/api";
 
-const PRESETS = [
-  { label: "Pipecat README", url: "https://github.com/pipecat-ai/pipecat/blob/main/README.md" },
-  { label: "Mastra README", url: "https://github.com/mastra-ai/mastra/blob/main/README.md" },
-  { label: "Custom URL…", url: "" },
-];
+const CUSTOM = "__custom__";
+const LANGUAGE = { en: "English", pt: "Portuguese", es: "Spanish" } as const;
+const SIZE = { short: "short", medium: "medium", long: "long" } as const;
 
 export function CreateQuizForm() {
   const router = useRouter();
-  const [preset, setPreset] = useState(PRESETS[0]!.url);
+  const [catalog, setCatalog] = useState<CatalogEntry[] | null>(null);
+  const [catalogError, setCatalogError] = useState(false);
+  const [selected, setSelected] = useState<string>("");
   const [custom, setCustom] = useState("");
   const [topic, setTopic] = useState("");
   const [num, setNum] = useState(6);
@@ -25,17 +26,45 @@ export function CreateQuizForm() {
   // One Idempotency-Key per user intent: it only changes when the request itself changes.
   const keyRef = useRef<{ fingerprint: string; key: string } | null>(null);
 
+  useEffect(() => {
+    let alive = true;
+    api("/v1/catalog", { schema: CatalogResponseSchema })
+      .then(({ data }) => {
+        if (!alive) return;
+        setCatalog(data.items);
+        setSelected((cur) => cur || data.items[0]?.id || CUSTOM);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setCatalogError(true); // the list is a convenience: without it the user can still paste a URL
+        setSelected(CUSTOM);
+      });
+    return () => { alive = false; };
+  }, []);
+
+  const entry = useMemo(() => catalog?.find((e) => e.id === selected), [catalog, selected]);
+  const groups = useMemo(
+    () => [
+      { label: "Real project READMEs", items: (catalog ?? []).filter((e) => e.kind === "readme") },
+      { label: "Test documents (each checks one behaviour)", items: (catalog ?? []).filter((e) => e.kind === "test") },
+    ],
+    [catalog],
+  );
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    const sourceUrl = preset || custom.trim();
-    if (!sourceUrl) return setError("Enter the URL of a Markdown document.");
-    const body = { sourceUrl, ...(topic.trim() ? { topic: topic.trim() } : {}), numQuestions: num, strategy, critique };
+    const sourceUrl = selected === CUSTOM ? custom.trim() : entry?.url;
+    if (!sourceUrl) return setError("Choose a document, or enter the URL of a Markdown file.");
+    // The same schema the API enforces, so mistakes are explained here instead of after a round trip.
+    const checked = CreateQuizBodySchema.safeParse({ sourceUrl, ...(topic.trim() ? { topic: topic.trim() } : {}), numQuestions: num, strategy, critique });
+    if (!checked.success) return setError(checked.error.issues[0]?.message ?? "Check the form and try again.");
+    const body = checked.data;
     const fp = JSON.stringify(body);
     if (!keyRef.current || keyRef.current.fingerprint !== fp) keyRef.current = { fingerprint: fp, key: newKey() };
     setBusy(true);
     try {
-      const { data } = await api<{ quiz: QuizSummary }>("/v1/quizzes", { method: "POST", body, idempotencyKey: keyRef.current.key });
+      const { data } = await api("/v1/quizzes", { method: "POST", body, idempotencyKey: keyRef.current.key, schema: QuizEnvelopeSchema });
       keyRef.current = null;
       router.push(`/app/quiz/${data.quiz.id}`);
     } catch (err) {
@@ -50,11 +79,23 @@ export function CreateQuizForm() {
       <div className="grid">
         <div>
           <label htmlFor="preset">Document</label>
-          <select id="preset" value={preset} onChange={(e) => setPreset(e.target.value)}>
-            {PRESETS.map((p) => <option key={p.label} value={p.url}>{p.label}</option>)}
+          <select id="preset" value={selected} onChange={(e) => setSelected(e.target.value)} disabled={!catalog && !catalogError}>
+            {!catalog && !catalogError && <option value="">Loading documents…</option>}
+            {groups.map((g) => g.items.length > 0 && (
+              <optgroup key={g.label} label={g.label}>
+                {g.items.map((it) => <option key={it.id} value={it.id}>{it.title}</option>)}
+              </optgroup>
+            ))}
+            <option value={CUSTOM}>Other: paste a URL…</option>
           </select>
+          {entry && (
+            <p className="muted" id="doc-info" style={{ margin: "6px 0 0", fontSize: 13 }}>
+              {entry.description}. {LANGUAGE[entry.language]}, {SIZE[entry.size]}. <strong>Tests:</strong> {entry.tests}.
+            </p>
+          )}
+          {catalogError && <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>The document list is unavailable; paste a URL instead.</p>}
         </div>
-        {preset === "" && (
+        {selected === CUSTOM && (
           <div>
             <label htmlFor="url">Markdown URL</label>
             <input id="url" type="url" value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="https://github.com/owner/repo/blob/main/README.md" required />
@@ -85,7 +126,7 @@ export function CreateQuizForm() {
         </label>
       </p>
       {error && <p className="alert error" role="alert">{error}</p>}
-      <button className="btn" type="submit" disabled={busy || !ready}>{busy ? <><span className="spinner" aria-hidden /> Creating…</> : "Generate quiz"}</button>
+      <button className="btn" type="submit" disabled={busy || !ready || !selected}>{busy ? <><span className="spinner" aria-hidden /> Creating…</> : "Generate quiz"}</button>
     </form>
   );
 }
