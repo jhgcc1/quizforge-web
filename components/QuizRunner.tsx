@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AttemptWithAnswersSchema, QuizWithQuestionsSchema, SaveAnswerResponseSchema, SubmitResponseSchema } from "@quizforge/core/schemas";
-import { ApiError, api, newKey, type AttemptResult, type PublicQuestion, type QuizSummary, type SavedAnswer } from "@/lib/api";
+import { ApiError, api, newKey, type AttemptResult, type PublicQuestion, type QuizSummary } from "@/lib/api";
 import { ResultView } from "./ResultView";
 
 type Save = "idle" | "saving" | "saved" | "error";
