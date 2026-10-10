@@ -1,3 +1,4 @@
+import { BAD_TOPICS } from "@quizforge/core";
 import { describe, expect, it } from "vitest";
 import { validateBody } from "./validate.js";
 
@@ -24,6 +25,16 @@ describe("BFF request validation (same schemas as the API)", () => {
     expect(validateBody("PUT", path, JSON.stringify({ optionIds: [uuid], revision: 1 }))).toBeUndefined();
     for (const body of [{ optionIds: [], revision: 1 }, { optionIds: ["x"], revision: 1 }, { optionIds: [uuid] }, { optionIds: [uuid, uuid, uuid, uuid, uuid], revision: 1 }]) {
       expect(validateBody("PUT", path, JSON.stringify(body))?.status, JSON.stringify(body)).toBe(400);
+    }
+  });
+
+  it("refuses every bad topic of the attack corpus at the edge (hidden, encoded or instruction-like text) and accepts normal topics", () => {
+    for (const b of BAD_TOPICS) {
+      const r = validateBody("POST", ["v1", "quizzes"], JSON.stringify({ topic: b.topic }));
+      expect(r?.status, b.id).toBe(400);
+    }
+    for (const topic of ["Retries and dead jobs", "Configuração", "¿Cómo funciona?"]) {
+      expect(validateBody("POST", ["v1", "quizzes"], JSON.stringify({ topic })), topic).toBeUndefined();
     }
   });
 });
