@@ -91,5 +91,5 @@ const safeJson = (s: string) => {
 };
 
 /* Response types come from the shared schemas, so the browser and the API cannot drift. */
-export type { AttemptResult, CatalogEntry, PublicQuestion, QuizSummary, SavedAnswer } from "@quizforge/core/schemas";
+export type { AttemptResult, CatalogEntry, PublicQuestion, QuizListItem, QuizSummary, SavedAnswer } from "@quizforge/core/schemas";
 export type QuizStatus = "queued" | "generating" | "ready" | "failed";

@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AttemptWithAnswersSchema, QuizWithQuestionsSchema, SaveAnswerResponseSchema, SubmitResponseSchema } from "@quizforge/core/schemas";
+import { AttemptListSchema, AttemptResultSchema, AttemptWithAnswersSchema, QuizWithQuestionsSchema, SaveAnswerResponseSchema, SubmitResponseSchema } from "@quizforge/core/schemas";
+import { z } from "zod";
 import { ApiError, api, newKey, type AttemptResult, type PublicQuestion, type QuizSummary } from "@/lib/api";
 import { ResultView } from "./ResultView";
 
@@ -19,6 +20,7 @@ export function QuizRunner({ quizId }: { quizId: string }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const pending = useRef(new Set<Promise<unknown>>());
   const startKey = useRef(newKey());
+  const [history, setHistory] = useState<z.output<typeof AttemptListSchema>["attempts"]>([]);
 
   /* poll until the quiz is ready or failed, backing off from 1.5s to 5s */
   useEffect(() => {
@@ -39,6 +41,25 @@ export function QuizRunner({ quizId }: { quizId: string }) {
     void tick();
     return () => { ctrl.abort(); clearTimeout(timer); };
   }, [quizId]);
+
+  /* the user's earlier attempts on this quiz (scores), loaded once the quiz is ready */
+  useEffect(() => {
+    if (quiz?.status !== "ready") return;
+    api(`/v1/quizzes/${quizId}/attempts`, { schema: AttemptListSchema }).then(({ data }) => setHistory(data.attempts)).catch(() => undefined);
+  }, [quizId, quiz?.status]);
+
+  const viewResult = async (id: string) => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      const { data } = await api(`/v1/attempts/${id}`, { schema: z.object({ result: AttemptResultSchema }) });
+      setResult(data.result);
+    } catch (e) {
+      setActionError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const start = useCallback(async () => {
     setBusy(true);
@@ -127,8 +148,25 @@ export function QuizRunner({ quizId }: { quizId: string }) {
           <li>Some questions have more than one correct option — you will be told when they do.</li>
           <li>Later questions weigh more: weights grow by 10% per question.</li>
         </ul>
+        {history.some((a) => a.status === "submitted") && (
+          <>
+            <h2>Your results</h2>
+            <ul className="list">
+              {history.filter((a) => a.status === "submitted").map((a) => (
+                <li key={a.id} className="row spread">
+                  <span>
+                    <strong>{(a.finalScore ?? 0).toFixed(2)} / 4</strong> <span className="muted">({Math.round(a.percent ?? 0)}%) · {a.submittedAt ? new Date(a.submittedAt).toLocaleString() : ""}</span>
+                  </span>
+                  <button className="btn secondary" onClick={() => viewResult(a.id)} disabled={busy}>View result</button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
         {actionError && <p className="alert error" role="alert">{actionError}</p>}
-        <button className="btn" onClick={start} disabled={busy}>{busy ? "Starting…" : "Start quiz"}</button>
+        <button className="btn" onClick={start} disabled={busy}>
+          {busy ? "Starting…" : history.some((a) => a.status === "in_progress") ? "Continue quiz" : history.some((a) => a.status === "submitted") ? "Retake quiz" : "Start quiz"}
+        </button>
       </section>
     );
   }
