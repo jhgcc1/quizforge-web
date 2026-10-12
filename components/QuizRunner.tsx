@@ -21,6 +21,7 @@ export function QuizRunner({ quizId }: { quizId: string }) {
   const pending = useRef(new Set<Promise<unknown>>());
   const startKey = useRef(newKey());
   const [history, setHistory] = useState<z.output<typeof AttemptListSchema>["attempts"]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
 
   /* poll until the quiz is ready or failed, backing off from 1.5s to 5s */
   useEffect(() => {
@@ -45,7 +46,7 @@ export function QuizRunner({ quizId }: { quizId: string }) {
   /* the user's earlier attempts on this quiz (scores), loaded once the quiz is ready */
   useEffect(() => {
     if (quiz?.status !== "ready") return;
-    api(`/v1/quizzes/${quizId}/attempts`, { schema: AttemptListSchema }).then(({ data }) => setHistory(data.attempts)).catch(() => undefined);
+    api(`/v1/quizzes/${quizId}/attempts`, { schema: AttemptListSchema }).then(({ data }) => setHistory(data.attempts)).catch(() => undefined).finally(() => setHistoryLoaded(true));
   }, [quizId, quiz?.status]);
 
   const viewResult = async (id: string) => {
@@ -164,8 +165,9 @@ export function QuizRunner({ quizId }: { quizId: string }) {
           </>
         )}
         {actionError && <p className="alert error" role="alert">{actionError}</p>}
-        <button className="btn" onClick={start} disabled={busy}>
-          {busy ? "Starting…" : history.some((a) => a.status === "in_progress") ? "Continue quiz" : history.some((a) => a.status === "submitted") ? "Retake quiz" : "Start quiz"}
+        {/* the label depends on the history (Start / Continue / Retake), so wait for it instead of flashing the wrong one */}
+        <button className="btn" onClick={start} disabled={busy || !historyLoaded}>
+          {!historyLoaded ? "Loading…" : busy ? "Starting…" : history.some((a) => a.status === "in_progress") ? "Continue quiz" : history.some((a) => a.status === "submitted") ? "Retake quiz" : "Start quiz"}
         </button>
       </section>
     );
