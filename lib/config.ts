@@ -1,4 +1,5 @@
 import "server-only";
+import { parseSocialProviders, type SocialProvider } from "./oauth-url";
 
 /** Server-side configuration. Never imported by client components. */
 export interface WebConfig {
@@ -10,6 +11,10 @@ export interface WebConfig {
   apiUrl: string;
   localSecret: string;
   secureCookies: boolean;
+  /** Show "Create account" (Cognito self sign-up is on). */
+  allowSignup: boolean;
+  /** Social identity providers enabled in Cognito. */
+  socialProviders: SocialProvider[];
 }
 
 export function webConfig(env: NodeJS.ProcessEnv = process.env): WebConfig {
@@ -28,5 +33,7 @@ export function webConfig(env: NodeJS.ProcessEnv = process.env): WebConfig {
     apiUrl: (env.API_URL ?? "http://localhost:8080").replace(/\/$/, ""),
     localSecret: env.LOCAL_JWT_SECRET ?? "",
     secureCookies: appUrl.startsWith("https://"),
+    allowSignup: env.ALLOW_SIGNUP === "true",
+    socialProviders: parseSocialProviders(env.SOCIAL_PROVIDERS),
   };
 }
