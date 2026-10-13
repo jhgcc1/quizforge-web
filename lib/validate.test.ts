@@ -37,4 +37,11 @@ describe("BFF request validation (same schemas as the API)", () => {
       expect(validateBody("POST", ["v1", "quizzes"], JSON.stringify({ topic })), topic).toBeUndefined();
     }
   });
+
+  it("a missing body is validated as an empty object (so required fields are still enforced for the answer route)", () => {
+    expect(validateBody("POST", ["v1", "quizzes"], undefined)).toBeUndefined(); // every create-quiz field is optional
+    const r = validateBody("PUT", ["v1", "attempts", uuid, "answers", uuid], undefined);
+    expect(r?.status).toBe(400);
+    expect(r?.body.error.details).toBeInstanceOf(Array);
+  });
 });
