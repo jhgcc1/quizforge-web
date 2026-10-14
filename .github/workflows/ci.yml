@@ -67,12 +67,9 @@ jobs:
       - name: Build the image
         run: docker build -t quizforge-web:ci .
       - name: "Trivy (fails on fixable HIGH or CRITICAL findings)"
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: quizforge-web:ci
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/.trivyignore:/.trivyignore:ro" \
+            aquasec/trivy:0.58.1 image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --ignorefile /.trivyignore quizforge-web:ci
 
   secrets-scan:
     name: secrets-scan
