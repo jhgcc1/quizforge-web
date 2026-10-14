@@ -1,4 +1,3 @@
-import path from "node:path";
 import type { NextConfig } from "next";
 
 const isProd = process.env.NODE_ENV === "production";
@@ -19,9 +18,8 @@ const config: NextConfig = {
   ...(process.env.NEXT_OUTPUT === "standalone" ? { output: "standalone" as const } : {}),
   poweredByHeader: false,
   reactStrictMode: true,
-  // shared request/response schemas are TypeScript source in the workspace
+  // the API contract is TypeScript source (a git dependency), so Next compiles it
   transpilePackages: ["@quizforge/contract"],
-  outputFileTracingRoot: path.join(__dirname, "../../"),
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
