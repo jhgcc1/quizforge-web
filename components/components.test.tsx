@@ -1,0 +1,320 @@
+// @vitest-environment jsdom
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const push = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+vi.mock("@/lib/api", async (orig) => ({ ...(await orig<typeof import("@/lib/api")>()), api: vi.fn(), newKey: () => "key-1" }));
+vi.mock("@/lib/client-log", () => ({ reportClientError: vi.fn() }));
+
+import { ApiError, api } from "@/lib/api";
+import { reportClientError } from "@/lib/client-log";
+import ErrorPage from "@/app/error";
+import { ClientErrorReporter } from "./ClientErrorReporter";
+import { CreateQuizForm } from "./CreateQuizForm";
+import { QuizList } from "./QuizList";
+import { QuizRunner } from "./QuizRunner";
+import { ResultView } from "./ResultView";
+import { UserMenu } from "./UserMenu";
+
+const apiMock = vi.mocked(api);
+const ok = (data: unknown) => Promise.resolve({ data, replayed: false, status: 200 }) as ReturnType<typeof api>;
+const route = (table: Record<string, () => unknown>) =>
+  apiMock.mockImplementation(((path: string, opts?: { method?: string }) => {
+    const key = `${opts?.method ?? "GET"} ${path}`;
+    const hit = Object.entries(table).find(([k]) => key === k);
+    if (!hit) return Promise.reject(new Error(`unexpected ${key}`));
+    const v = hit[1]();
+    return v instanceof Error ? Promise.reject(v) : ok(v);
+  }) as typeof api);
+
+beforeEach(() => { apiMock.mockReset(); push.mockReset(); });
+afterEach(() => vi.useRealTimers());
+
+const entry = (o: Record<string, unknown> = {}) => ({ id: "pipecat", title: "Pipecat", description: "Voice agents", kind: "readme", language: "en", size: "long", tests: "long documents", url: "https://github.com/pipecat-ai/pipecat/blob/main/README.md", ...o });
+
+describe("CreateQuizForm", () => {
+  it("lists the catalog, validates, and creates a quiz with one stable Idempotency-Key", async () => {
+    route({ "GET /v1/catalog": () => ({ items: [entry(), entry({ id: "t1", title: "Tiny", kind: "test" })] }), "POST /v1/quizzes": () => ({ quiz: { id: "q-1" } }) });
+    render(<CreateQuizForm />);
+    await screen.findByText(/Voice agents/);
+    fireEvent.change(screen.getByLabelText("Topic (optional)"), { target: { value: "agents" } });
+    fireEvent.change(screen.getByLabelText("Questions"), { target: { value: "7" } });
+    fireEvent.click(screen.getByLabelText(/second AI pass/));
+    fireEvent.click(screen.getByRole("button", { name: "Generate quiz" }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/app/quiz/q-1"));
+    const call = apiMock.mock.calls.find(([p]) => p === "/v1/quizzes")![1]!;
+    expect(call).toMatchObject({ method: "POST", idempotencyKey: "key-1", body: { topic: "agents", numQuestions: 7, critique: false, strategy: "auto" } });
+  });
+  it("falls back to a pasted URL when the catalog fails, and shows a message for an empty URL", async () => {
+    route({ "GET /v1/catalog": () => new Error("down") });
+    render(<CreateQuizForm />);
+    await screen.findByText(/document list is unavailable/);
+    const url = screen.getByLabelText("Markdown URL");
+    fireEvent.change(url, { target: { value: "not a url" } });
+    fireEvent.submit(url.closest("form")!);
+    expect((await screen.findByRole("alert")).textContent).toBeTruthy();
+    expect(apiMock.mock.calls.some(([p]) => p === "/v1/quizzes")).toBe(false);
+  });
+  it("shows the API error and keeps the key, so pressing again is a safe retry", async () => {
+    let n = 0;
+    route({ "GET /v1/catalog": () => ({ items: [entry()] }), "POST /v1/quizzes": () => (++n === 1 ? new ApiError(429, "rate", "Daily limit reached") : { quiz: { id: "q-2" } }) });
+    render(<CreateQuizForm />);
+    await screen.findByText(/Voice agents/);
+    const button = screen.getByRole("button", { name: "Generate quiz" });
+    fireEvent.click(button);
+    expect((await screen.findByRole("alert")).textContent).toBe("Daily limit reached");
+    fireEvent.click(screen.getByRole("button", { name: "Generate quiz" }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/app/quiz/q-2"));
+    const keys = apiMock.mock.calls.filter(([p]) => p === "/v1/quizzes").map(([, o]) => (o as { idempotencyKey: string }).idempotencyKey);
+    expect(keys).toEqual(["key-1", "key-1"]);
+  });
+  it("shows a generic message for an unexpected error", async () => {
+    route({ "GET /v1/catalog": () => ({ items: [entry()] }), "POST /v1/quizzes": () => new Error("boom") });
+    render(<CreateQuizForm />);
+    await screen.findByText(/Voice agents/);
+    fireEvent.click(screen.getByRole("button", { name: "Generate quiz" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Something went wrong. Try again.");
+  });
+});
+
+const item = (o: Record<string, unknown> = {}) => ({
+  id: "q1", sourceUrl: "https://github.com/acme/app/blob/main/README.md", topic: "deploy", status: "ready", numQuestions: 6, strategyRequested: "auto", strategyUsed: "single-shot",
+  createdAt: "2026-10-01T10:00:00Z", progress: { attempts: 0, last: null, best: null, inProgressAttemptId: null }, ...o,
+});
+
+describe("QuizList", () => {
+  it("shows the empty state, an error, and each progress variant", async () => {
+    route({ "GET /v1/quizzes": () => ({ quizzes: [] }) });
+    const first = render(<QuizList />);
+    await screen.findByText(/No quizzes yet/);
+    first.unmount();
+
+    route({ "GET /v1/quizzes": () => new Error("API down") });
+    const second = render(<QuizList />);
+    expect((await screen.findByRole("alert")).textContent).toBe("API down");
+    second.unmount();
+
+    route({
+      "GET /v1/quizzes": () => ({
+        quizzes: [
+          item({ id: "a" }),
+          item({ id: "b", progress: { attempts: 1, last: { finalScore: 3.2, percent: 80 }, best: 3.6, inProgressAttemptId: "x" } }),
+          item({ id: "c", progress: { attempts: 2, last: { finalScore: 2, percent: 50 }, best: null, inProgressAttemptId: null }, topic: null, strategyUsed: null }),
+          item({ id: "d", progress: { attempts: 0, last: null, best: null, inProgressAttemptId: "y" } }),
+          item({ id: "e", status: "failed" }),
+        ],
+      }),
+    });
+    render(<QuizList />);
+    await screen.findByText("not answered yet");
+    expect(screen.getByText(/best 3\.60/)).toBeTruthy();
+    expect(screen.getByText(/retake in progress/)).toBeTruthy();
+    expect(screen.getByText("in progress")).toBeTruthy();
+    expect(screen.getByText("3.20 / 4").closest("span")?.getAttribute("title")).toBe("1 attempt");
+    expect(screen.getByText("2.00 / 4").closest("span")?.getAttribute("title")).toBe("2 attempts");
+    expect(screen.getAllByText("acme/app")).toHaveLength(5);
+  });
+  it("polls while a quiz is still being generated", async () => {
+    vi.useFakeTimers();
+    let n = 0;
+    route({ "GET /v1/quizzes": () => ({ quizzes: [item({ status: ++n < 2 ? "generating" : "ready" })] }) });
+    render(<QuizList />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByText("generating")).toBeTruthy();
+    await act(async () => { await vi.advanceTimersByTimeAsync(4100); });
+    expect(screen.getByText("ready")).toBeTruthy();
+    expect(n).toBe(2);
+  });
+});
+
+const quizReady = { id: "qz", sourceUrl: "https://github.com/a/b/blob/main/README.md", topic: "agents", status: "ready", numQuestions: 2, strategyRequested: "auto", strategyUsed: "single-shot", error: null };
+const questions = [
+  { id: "q-a", position: 1, prompt: "First?", type: "single", options: [{ id: "a1", text: "Alpha" }, { id: "a2", text: "Beta" }] },
+  { id: "q-b", position: 2, prompt: "Second?", type: "multiple", options: [{ id: "b1", text: "One" }, { id: "b2", text: "Two" }] },
+];
+const result = {
+  id: "att", finalScore: 3.5, percent: 87.5,
+  questions: [{ id: "q-a", position: 1, prompt: "First?", weight: 1, score: 4, explanation: "Because.", sourceQuote: "alpha is first", options: [{ id: "a1", text: "Alpha", isCorrect: true, selected: true }, { id: "a2", text: "Beta", isCorrect: false, selected: true }, { id: "a3", text: "Gamma", isCorrect: false, selected: false }] }],
+};
+
+describe("QuizRunner", () => {
+  const base = (over: Record<string, () => unknown> = {}) => ({
+    "GET /v1/quizzes/qz": () => ({ quiz: quizReady, questions }),
+    "GET /v1/quizzes/qz/attempts": () => ({ attempts: [] }),
+    "POST /v1/quizzes/qz/attempts": () => ({ attempt: { id: "att" }, answers: [] }),
+    "PUT /v1/attempts/att/answers/q-a": () => ({ status: "saved" }),
+    "PUT /v1/attempts/att/answers/q-b": () => ({ status: "saved" }),
+    "POST /v1/attempts/att/submit": () => ({ result }),
+    ...over,
+  });
+
+  it("walks through the quiz, saves each answer, and shows the result", async () => {
+    route(base());
+    render(<QuizRunner quizId="qz" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Start quiz" }));
+    await screen.findByRole("heading", { name: "First?" });
+    expect(screen.getByText("Select one answer.")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Alpha"));
+    await screen.findByText("Saved ✓");
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByRole("heading", { name: "Second?" });
+    expect(screen.getByText("Select all that apply.")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("One"));
+    fireEvent.click(screen.getByLabelText("Two"));
+    fireEvent.click(screen.getByLabelText("One")); // deselect
+    await screen.findByText("Saved ✓");
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    await screen.findByRole("heading", { name: "First?" });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    expect(await screen.findByTestId("final-score")).toBeTruthy();
+    const puts = apiMock.mock.calls.filter(([p, o]) => (o as { method?: string } | undefined)?.method === "PUT" && String(p).endsWith("q-b"));
+    expect(puts.map(([, o]) => (o as { body: { optionIds: string[]; revision: number } }).body)).toEqual([
+      { optionIds: ["b1"], revision: 1 }, { optionIds: ["b1", "b2"], revision: 2 }, { optionIds: ["b2"], revision: 3 },
+    ]);
+  });
+  it("does not allow clearing the last option of a multiple-choice question", async () => {
+    route(base());
+    render(<QuizRunner quizId="qz" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Start quiz" }));
+    await screen.findByRole("heading", { name: "First?" });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByLabelText("One"));
+    await screen.findByText("Saved ✓");
+    fireEvent.click(screen.getByLabelText("One"));
+    expect(apiMock.mock.calls.filter(([p]) => String(p).endsWith("q-b"))).toHaveLength(1);
+  });
+  it("offers Retry when a save fails and blocks submit until it is saved", async () => {
+    let fail = true;
+    route(base({ "PUT /v1/attempts/att/answers/q-a": () => (fail ? new Error("save failed") : { status: "saved" }) }));
+    render(<QuizRunner quizId="qz" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Start quiz" }));
+    await screen.findByRole("heading", { name: "First?" });
+    fireEvent.click(screen.getByLabelText("Alpha"));
+    await screen.findByText(/Could not save/);
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: /Submit/ }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/Some answers could not be saved/);
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    fail = false;
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    await screen.findByText("Saved ✓");
+  });
+  it("resumes an open attempt (Continue) at the first unanswered question", async () => {
+    route(base({
+      "GET /v1/quizzes/qz/attempts": () => ({ attempts: [{ id: "att", status: "in_progress" }] }),
+      "POST /v1/quizzes/qz/attempts": () => ({ attempt: { id: "att" }, answers: [{ questionId: "q-a", optionIds: ["a1"], revision: 1 }] }),
+    }));
+    render(<QuizRunner quizId="qz" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Continue quiz" }));
+    await screen.findByRole("heading", { name: "Second?" });
+  });
+  it("shows earlier results, lets the user view one, and offers Retake", async () => {
+    route(base({
+      "GET /v1/quizzes/qz/attempts": () => ({ attempts: [{ id: "att", status: "submitted", finalScore: 2.5, percent: 62.5, submittedAt: "2026-10-01T10:00:00Z" }] }),
+      "GET /v1/attempts/att": () => ({ result }),
+    }));
+    render(<QuizRunner quizId="qz" />);
+    await screen.findByRole("button", { name: "Retake quiz" });
+    fireEvent.click(screen.getByRole("button", { name: "View result" }));
+    expect(await screen.findByTestId("final-score")).toBeTruthy();
+  });
+  it("shows a message when viewing a result or starting fails", async () => {
+    route(base({
+      "GET /v1/quizzes/qz/attempts": () => ({ attempts: [{ id: "att", status: "submitted", finalScore: 1, percent: 25, submittedAt: null }] }),
+      "GET /v1/attempts/att": () => new Error("no result"),
+      "POST /v1/quizzes/qz/attempts": () => new Error("cannot start"),
+    }));
+    render(<QuizRunner quizId="qz" />);
+    fireEvent.click(await screen.findByRole("button", { name: "View result" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("no result");
+    fireEvent.click(screen.getByRole("button", { name: "Retake quiz" }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("cannot start"));
+  });
+  it("explains a missing quiz, a failed quiz and a quiz still being written", async () => {
+    route({ "GET /v1/quizzes/qz": () => new ApiError(404, "not_found", "x") });
+    const a = render(<QuizRunner quizId="qz" />);
+    expect((await screen.findByRole("alert")).textContent).toBe("This quiz does not exist.");
+    a.unmount();
+
+    route({ "GET /v1/quizzes/qz": () => ({ quiz: { ...quizReady, status: "failed", error: "document too long" }, questions: [] }) });
+    const b = render(<QuizRunner quizId="qz" />);
+    expect((await screen.findByRole("alert")).textContent).toBe("document too long");
+    b.unmount();
+
+    vi.useFakeTimers();
+    let n = 0;
+    route({ "GET /v1/quizzes/qz": () => ({ quiz: { ...quizReady, status: ++n < 2 ? "generating" : "ready" }, questions }), "GET /v1/quizzes/qz/attempts": () => ({ attempts: [] }) });
+    render(<QuizRunner quizId="qz" />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByText(/Writing your quiz/)).toBeTruthy();
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(screen.getByText(/Ready: 2 questions/)).toBeTruthy();
+  });
+});
+
+describe("ResultView", () => {
+  it("shows the score, the correct and the chosen options, and the explanation", () => {
+    render(<ResultView result={result as never} quiz={quizReady as never} />);
+    expect(screen.getByTestId("final-score").textContent).toContain("3.50");
+    expect(screen.getByTestId("final-percent").textContent).toBe("87.5%");
+    expect(screen.getByText("(correct answer)", { exact: false })).toBeTruthy();
+    expect(screen.getAllByText("your answer").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Because\./)).toBeTruthy();
+    expect(screen.getByText(/alpha is first/)).toBeTruthy();
+  });
+});
+
+describe("UserMenu", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("shows a shortened account id, or nothing when signed out or offline", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ sub: "0123456789abcdef" }), { status: 200 })));
+    const a = render(<UserMenu />);
+    await screen.findByText("01234567…");
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
+    a.unmount();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 401 })));
+    const b = render(<UserMenu />);
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    expect(screen.queryByTitle("Your account id")).toBeNull();
+    b.unmount();
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    render(<UserMenu />);
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
+  });
+  it("keeps a short id whole", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ sub: "u1" }), { status: 200 })));
+    render(<UserMenu />);
+    await screen.findByText("u1");
+  });
+});
+
+describe("error handling in the browser", () => {
+  it("the error page reports the error and lets the user retry", () => {
+    const reset = vi.fn();
+    const error = Object.assign(new Error("render failed"), { digest: "d-1" });
+    render(<ErrorPage error={error} reset={reset} />);
+    expect(reportClientError).toHaveBeenCalledWith(error, "react", "d-1");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(reset).toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "Back to dashboard" }).getAttribute("href")).toBe("/app");
+  });
+  it("the reporter forwards window errors and unhandled rejections, and stops after unmount", () => {
+    vi.mocked(reportClientError).mockClear();
+    const view = render(<ClientErrorReporter />);
+    const boom = new Error("uncaught");
+    window.dispatchEvent(new ErrorEvent("error", { error: boom, message: "uncaught" }));
+    window.dispatchEvent(new ErrorEvent("error", { message: "script error" })); // no error object: the message is used
+    const rejection = new Event("unhandledrejection") as Event & { reason: unknown };
+    rejection.reason = "nope";
+    window.dispatchEvent(rejection);
+    expect(reportClientError).toHaveBeenNthCalledWith(1, boom, "window");
+    expect(reportClientError).toHaveBeenNthCalledWith(2, "script error", "window");
+    expect(reportClientError).toHaveBeenNthCalledWith(3, "nope", "promise");
+    view.unmount();
+    window.dispatchEvent(new ErrorEvent("error", { message: "after" }));
+    expect(reportClientError).toHaveBeenCalledTimes(3);
+  });
+});

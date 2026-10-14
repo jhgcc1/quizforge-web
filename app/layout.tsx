@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { ClientErrorReporter } from "@/components/ClientErrorReporter";
 
 export const metadata: Metadata = {
   title: "QuizForge",
@@ -10,7 +11,10 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, colo
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <ClientErrorReporter />
+        {children}
+      </body>
     </html>
   );
 }
