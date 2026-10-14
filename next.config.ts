@@ -20,7 +20,7 @@ const config: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
   // shared request/response schemas are TypeScript source in the workspace
-  transpilePackages: ["@quizforge/core"],
+  transpilePackages: ["@quizforge/contract"],
   outputFileTracingRoot: path.join(__dirname, "../../"),
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

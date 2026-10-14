@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { QuizListSchema } from "@quizforge/core/schemas";
+import { QuizListSchema } from "@quizforge/contract";
 import { api, type QuizListItem } from "@/lib/api";
 
 const host = (u: string) => {

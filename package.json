@@ -9,7 +9,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@quizforge/core": "workspace:*",
+    "@quizforge/contract": "workspace:*",
     "jose": "^6.2.12",
     "next": "^16.4.0",
     "react": "^19.3.0",

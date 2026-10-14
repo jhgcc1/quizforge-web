@@ -1,4 +1,3 @@
-import { BAD_TOPICS } from "@quizforge/core";
 import { describe, expect, it } from "vitest";
 import { validateBody } from "./validate.js";
 
@@ -28,10 +27,22 @@ describe("BFF request validation (same schemas as the API)", () => {
     }
   });
 
-  it("refuses every bad topic of the attack corpus at the edge (hidden, encoded or instruction-like text) and accepts normal topics", () => {
-    for (const b of BAD_TOPICS) {
-      const r = validateBody("POST", ["v1", "quizzes"], JSON.stringify({ topic: b.topic }));
-      expect(r?.status, b.id).toBe(400);
+  it("refuses at the edge the topics the BASIC check can see (line breaks, control, invisible, too short or long) and accepts normal topics", () => {
+    // instruction phrases and encodings are checked by the API only (strict schema in @quizforge/core)
+    const bad: Record<string, string> = {
+      newline: "Retries\nand dead jobs",
+      "carriage return": "Retries\rand dead jobs",
+      "line separator": "Retries\u2028and dead jobs",
+      "control character": "Retries\u0007 and dead jobs",
+      "zero-width space": "Re\u200Btries",
+      "bidi override": "Retries \u202Eand dead jobs",
+      "tag characters": "Retries\u{E0041}\u{E0042}",
+      "too short": "x",
+      "too long": "a".repeat(201),
+    };
+    for (const [id, topic] of Object.entries(bad)) {
+      const r = validateBody("POST", ["v1", "quizzes"], JSON.stringify({ topic }));
+      expect(r?.status, id).toBe(400);
     }
     for (const topic of ["Retries and dead jobs", "Configuração", "¿Cómo funciona?"]) {
       expect(validateBody("POST", ["v1", "quizzes"], JSON.stringify({ topic })), topic).toBeUndefined();

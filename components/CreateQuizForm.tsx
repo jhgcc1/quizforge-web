@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CatalogResponseSchema, CreateQuizBodySchema, QuizEnvelopeSchema } from "@quizforge/core/schemas";
+import { CatalogResponseSchema, CreateQuizBodySchema, QuizEnvelopeSchema } from "@quizforge/contract";
 import { ApiError, api, newKey, type CatalogEntry } from "@/lib/api";
 
 const CUSTOM = "__custom__";

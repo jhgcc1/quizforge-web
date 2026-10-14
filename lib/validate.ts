@@ -1,4 +1,4 @@
-import { CreateQuizBodySchema, SaveAnswerBodySchema } from "@quizforge/core/schemas";
+import { CreateQuizBodySchema, SaveAnswerBodySchema } from "@quizforge/contract";
 
 /**
  * Request bodies that have a contract are checked at the BFF too, with the same schemas the API uses: a malformed call is
