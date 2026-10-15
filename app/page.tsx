@@ -17,6 +17,24 @@ export default async function Landing({ searchParams }: { searchParams: Promise<
   if (jar.get("qf_at") || jar.get("qf_rt")) redirect("/app");
   const { error } = await searchParams;
   const cfg = webConfig();
+  if (cfg.authMode === "cognito") {
+    // The login page IS the Cognito Hosted UI (e-mail, sign-up link, Google, Facebook). No landing of our own.
+    // A failed login comes back with ?error=: show it instead of redirecting again, otherwise it would loop.
+    if (!error) redirect("/auth/login");
+    return (
+      <main className="shell">
+        <header className="topbar"><a className="brand" href="/">Quiz<span>Forge</span></a></header>
+        <section className="card" style={{ marginTop: 48 }}>
+          <h1>Sign-in problem</h1>
+          <p className="alert error" role="alert">{messages[error] ?? "Sign-in failed."}</p>
+          <nav aria-label="Sign in" className="row">
+            <a className="btn" href="/auth/login">Try again</a>
+          </nav>
+        </section>
+      </main>
+    );
+  }
+  // AUTH_MODE=local (development simulation): the page the end-to-end suite drives.
   return (
     <main className="shell">
       <header className="topbar"><a className="brand" href="/">Quiz<span>Forge</span></a></header>

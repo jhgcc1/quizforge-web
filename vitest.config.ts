@@ -4,7 +4,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: { alias: { "@": fileURLToPath(new URL(".", import.meta.url)) } }, // Next.js "@/..." imports
   test: {
-    include: ["lib/**/*.test.ts", "app/**/*.test.ts", "components/**/*.test.tsx"],
+    include: ["lib/**/*.test.ts", "app/**/*.test.ts", "app/**/*.test.tsx", "components/**/*.test.tsx"],
     setupFiles: ["./vitest.setup.ts"],
     environment: "node",
     coverage: {
@@ -12,7 +12,7 @@ export default defineConfig({
       reporter: ["text-summary", "json-summary", "lcov"],
       reportsDirectory: "coverage",
       all: true,
-      include: ["lib/**/*.ts", "app/**/route.ts", "app/error.tsx", "components/**/*.tsx"],
+      include: ["lib/**/*.ts", "app/**/route.ts", "app/error.tsx", "app/page.tsx", "components/**/*.tsx"],
       exclude: ["**/*.test.ts", "**/*.d.ts"],
       // Ratchet: a little below what is achieved today, so any drop fails the run. Raise when coverage rises.
       thresholds: {
