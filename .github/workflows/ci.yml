@@ -80,3 +80,37 @@ jobs:
         with: { fetch-depth: 0 }
       - name: gitleaks (full history)
         run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.21.2 detect --source /repo --redact --verbose
+
+  # Publish the web image to ECR (main only, after every gate). It deploys NOTHING: the role can only push to ECR; the infra repository
+  # (jhgcc1/quizforge-infra, workflow Deploy, input web_tag) decides when it goes to production.
+  publish:
+    name: publish
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [quality, build, docker-build, secrets-scan]
+    runs-on: ubuntu-24.04-arm # native arm64 image for Graviton Fargate
+    timeout-minutes: 30
+    concurrency: { group: publish-image, cancel-in-progress: false }
+    permissions:
+      id-token: write # OIDC: the ECR push-only role quizforge-gha-publish (trusts refs/heads/main of this repository)
+      contents: read
+    env:
+      WEB_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PUBLISH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+      - uses: docker/setup-buildx-action@v3
+      - name: "Build and push quizforge/web:web-<first 12 characters of the commit> (immutable; an existing tag is skipped)"
+        run: |
+          tag="web-$(cut -c1-12 <<< "$WEB_SHA")"
+          if aws ecr describe-images --repository-name quizforge/web --image-ids imageTag="$tag" >/dev/null 2>&1; then
+            echo "web:$tag already in ECR, skipping"
+          else
+            docker buildx build -f Dockerfile -t "${{ steps.ecr.outputs.registry }}/quizforge/web:$tag" --push \
+              --cache-from type=gha,scope=web-arm --cache-to type=gha,scope=web-arm,mode=max .
+          fi
+          echo "### Published \`quizforge/web:$tag\` to ECR. Deploy it from jhgcc1/quizforge-infra (workflow Deploy, web_tag=$tag)." >> "$GITHUB_STEP_SUMMARY"
