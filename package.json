@@ -17,7 +17,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@quizforge/contract": "https://github.com/jhgcc1/quizforge/releases/download/contract-v1.0.0/quizforge-contract-1.0.0.tgz",
+    "@quizforge/contract": "https://github.com/jhgcc1/quizforge/releases/download/contract-v1.1.0/quizforge-contract-1.1.0.tgz",
     "jose": "^6.2.12",
     "next": "^16.4.0",
     "react": "^19.3.0",

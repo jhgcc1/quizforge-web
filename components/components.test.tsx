@@ -252,6 +252,53 @@ describe("QuizRunner", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
     expect(screen.getByText(/Ready: 2 questions/)).toBeTruthy();
   });
+
+  it("shows a progress bar with the phase while generating, re-scaling when the server changes totalSteps, and honest fallbacks without progress", async () => {
+    vi.useFakeTimers();
+    const steps = [
+      { status: "queued" },
+      { status: "generating", generationProgress: null },
+      { status: "generating", generationProgress: { phase: "reading_document", step: 1, totalSteps: 5 } },
+      { status: "generating", generationProgress: { phase: "writing_questions", step: 2, totalSteps: 5, detail: "section 2 of 5" } },
+      { status: "generating", generationProgress: { phase: "reviewing", step: 4, totalSteps: 6, detail: "round 1 of 2" } },
+      { status: "ready" },
+    ];
+    let n = 0;
+    route({ "GET /v1/quizzes/qz": () => ({ quiz: { ...quizReady, ...steps[Math.min(n++, steps.length - 1)] }, questions }), "GET /v1/quizzes/qz/attempts": () => ({ attempts: [] }) });
+    render(<QuizRunner quizId="qz" />);
+    // advance until exactly one more poll happened (the poll delay backs off from 1.5 s to 5 s)
+    const next = async () => { const before = n; while (n === before) await act(async () => { await vi.advanceTimersByTimeAsync(100); }); };
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+    // queued: no phase yet, no bar, the spinner and an honest message
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(screen.getByText("Waiting for a free worker…")).toBeTruthy();
+    await next(); // generating but nothing reported yet (or an older API without the field)
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(screen.getByText("The agent is getting started…")).toBeTruthy();
+
+    await next();
+    let bar = screen.getByRole("progressbar");
+    expect(bar.getAttribute("aria-valuenow")).toBe("1");
+    expect(bar.getAttribute("aria-valuemax")).toBe("5");
+    expect(screen.getByTestId("phase-label").textContent).toContain("Reading the document");
+
+    await next();
+    bar = screen.getByRole("progressbar");
+    expect(bar.getAttribute("aria-valuetext")).toBe("Writing questions (section 2 of 5)");
+    expect(screen.getByTestId("phase-label").textContent).toContain("Writing questions (section 2 of 5)");
+    expect((bar.firstChild as HTMLElement).style.width).toBe("40%");
+
+    await next(); // a review step appeared: the total grows, the bar re-scales, the step still went up
+    bar = screen.getByRole("progressbar");
+    expect(bar.getAttribute("aria-valuenow")).toBe("4");
+    expect(bar.getAttribute("aria-valuemax")).toBe("6");
+    expect(screen.getByTestId("phase-label").textContent).toContain("Reviewing the questions (round 1 of 2)");
+
+    await next();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(screen.getByText(/Ready: 2 questions/)).toBeTruthy();
+  });
 });
 
 describe("ResultView", () => {

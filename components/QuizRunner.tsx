@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AttemptListSchema, AttemptResultSchema, AttemptWithAnswersSchema, QuizWithQuestionsSchema, SaveAnswerResponseSchema, SubmitResponseSchema } from "@quizforge/contract";
 import { z } from "zod";
 import { ApiError, api, newKey, type AttemptResult, type PublicQuestion, type QuizSummary } from "@/lib/api";
+import { phaseLabel, progressFraction } from "@/lib/progress";
 import { ResultView } from "./ResultView";
 
 type Save = "idle" | "saving" | "saved" | "error";
@@ -121,10 +122,22 @@ export function QuizRunner({ quizId }: { quizId: string }) {
   if (result && quiz) return <ResultView result={result} quiz={quiz} />;
 
   if (quiz.status === "queued" || quiz.status === "generating") {
+    // Only a running job has a phase; the server sends null (or, from an older API, nothing) otherwise: the spinner above is then the honest "working" signal.
+    const gen = quiz.status === "generating" ? quiz.generationProgress : null;
     return (
       <section className="card" aria-live="polite">
         <h1><span className="spinner" aria-hidden /> Writing your quiz…</h1>
-        <p className="muted">The agent is reading the document and drafting questions. This usually takes 30–90 seconds. You can leave this page and come back from the dashboard.</p>
+        {gen ? (
+          <>
+            <p data-testid="phase-label"><strong>{phaseLabel(gen)}</strong> <span className="muted">· step {Math.min(gen.step, gen.totalSteps)} of {gen.totalSteps}</span></p>
+            <div className="progress" role="progressbar" aria-label="Quiz generation progress" aria-valuemin={0} aria-valuemax={gen.totalSteps} aria-valuenow={Math.min(gen.step, gen.totalSteps)} aria-valuetext={phaseLabel(gen)}>
+              <div style={{ width: `${progressFraction(gen) * 100}%` }} />
+            </div>
+          </>
+        ) : (
+          <p className="muted">{quiz.status === "queued" ? "Waiting for a free worker…" : "The agent is getting started…"}</p>
+        )}
+        <p className="muted">This usually takes 30–90 seconds. You can leave this page and come back from the dashboard.</p>
         <span className={`chip ${quiz.status}`}>{quiz.status}</span>
       </section>
     );
