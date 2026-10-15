@@ -1,5 +1,5 @@
 import "server-only";
-import { parseSocialProviders, type SocialProvider } from "./oauth-url";
+import { parseScopes, parseSocialProviders, type SocialProvider } from "./oauth-url";
 
 /** Server-side configuration. Never imported by client components. */
 export interface WebConfig {
@@ -15,6 +15,8 @@ export interface WebConfig {
   allowSignup: boolean;
   /** Social identity providers enabled in Cognito. */
   socialProviders: SocialProvider[];
+  /** OAuth scopes requested at login (OAUTH_SCOPES, default "openid email"). */
+  oauthScopes: string;
 }
 
 export function webConfig(env: NodeJS.ProcessEnv = process.env): WebConfig {
@@ -35,5 +37,6 @@ export function webConfig(env: NodeJS.ProcessEnv = process.env): WebConfig {
     secureCookies: appUrl.startsWith("https://"),
     allowSignup: env.ALLOW_SIGNUP === "true",
     socialProviders: parseSocialProviders(env.SOCIAL_PROVIDERS),
+    oauthScopes: parseScopes(env.OAUTH_SCOPES),
   };
 }

@@ -41,3 +41,11 @@ describe("webConfig", () => {
     expect(webConfig().authMode).toBe(process.env.AUTH_MODE === "local" ? "local" : "cognito");
   });
 });
+
+describe("webConfig oauthScopes", () => {
+  it("defaults to openid email and reads OAUTH_SCOPES", () => {
+    expect(cfg().oauthScopes).toBe("openid email");
+    expect(cfg({ OAUTH_SCOPES: "openid email profile" }).oauthScopes).toBe("openid email profile");
+    expect(cfg({ OAUTH_SCOPES: "bogus" }).oauthScopes).toBe("openid email");
+  });
+});

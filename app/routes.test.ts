@@ -71,6 +71,12 @@ describe("auth login / logout", () => {
     expect(loc.searchParams.get("code_challenge_method")).toBe("S256");
     expect(JSON.parse(decodeURIComponent(res.cookies.get("qf_oauth")!.value)).next).toBe("/app");
   });
+  it("login requests openid email by default and the OAUTH_SCOPES value when set", async () => {
+    const { GET } = await import("./auth/login/route.js");
+    expect(new URL(GET(req("https://app.example.com/auth/login")).headers.get("location")!).searchParams.get("scope")).toBe("openid email");
+    vi.stubEnv("OAUTH_SCOPES", "openid email profile");
+    expect(new URL(GET(req("https://app.example.com/auth/login")).headers.get("location")!).searchParams.get("scope")).toBe("openid email profile");
+  });
   it("login without a provider does not force an identity provider; ?provider= and ?mode=signup still work", async () => {
     vi.stubEnv("SOCIAL_PROVIDERS", "google,facebook");
     vi.stubEnv("ALLOW_SIGNUP", "true");

@@ -6,7 +6,7 @@ import type { WebConfig } from "./config.js";
 vi.mock("server-only", () => ({}));
 const { AT, OAUTH, RT, clearSession, isFresh, peek, setSession, tokenRequest } = await import("./session.js");
 
-const cfg: WebConfig = { authMode: "cognito", cognitoDomain: "https://auth.example.com", clientId: "cid", clientSecret: "sec", appUrl: "https://app.example.com", apiUrl: "http://api", localSecret: "", secureCookies: true, allowSignup: false, socialProviders: [] };
+const cfg: WebConfig = { authMode: "cognito", cognitoDomain: "https://auth.example.com", clientId: "cid", clientSecret: "sec", appUrl: "https://app.example.com", apiUrl: "http://api", localSecret: "", secureCookies: true, allowSignup: false, socialProviders: [], oauthScopes: "openid email" };
 const jwt = (claims: Record<string, unknown>) => new SignJWT(claims).setProtectedHeader({ alg: "HS256" }).sign(new TextEncoder().encode("k".repeat(32)));
 const inSeconds = (s: number) => Math.floor(Date.now() / 1000) + s;
 
@@ -37,6 +37,8 @@ describe("peek and isFresh", () => {
     const exp = inSeconds(600);
     expect(peek(await jwt({ sub: "u1", exp }))).toEqual({ sub: "u1", exp });
     expect(peek(await jwt({}))).toEqual({});
+    expect(peek(await jwt({ sub: "u1", name: " Ana ", email: "a@b.co" }))).toEqual({ sub: "u1", name: "Ana", email: "a@b.co" });
+    expect(peek(await jwt({ name: 5, email: " " }))).toEqual({});
     expect(peek("not-a-jwt")).toBeUndefined();
     expect(peek(undefined)).toBeUndefined();
   });

@@ -6,7 +6,7 @@ import type { WebConfig } from "./config.js";
 vi.mock("server-only", () => ({}));
 const { accessToken, csrfOk, unauthorized } = await import("./bff.js");
 
-const cfg: WebConfig = { authMode: "cognito", cognitoDomain: "https://auth.example.com", clientId: "cid", clientSecret: "sec", appUrl: "https://app.example.com", apiUrl: "http://api", localSecret: "", secureCookies: true, allowSignup: false, socialProviders: [] };
+const cfg: WebConfig = { authMode: "cognito", cognitoDomain: "https://auth.example.com", clientId: "cid", clientSecret: "sec", appUrl: "https://app.example.com", apiUrl: "http://api", localSecret: "", secureCookies: true, allowSignup: false, socialProviders: [], oauthScopes: "openid email" };
 const jwt = (exp: number) => new SignJWT({ sub: "u" }).setExpirationTime(exp).setProtectedHeader({ alg: "HS256" }).sign(new TextEncoder().encode("k".repeat(32)));
 const now = () => Math.floor(Date.now() / 1000);
 const req = (cookies: Record<string, string> = {}, init: { method?: string; headers?: Record<string, string> } = {}) =>

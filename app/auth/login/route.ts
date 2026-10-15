@@ -33,6 +33,7 @@ export function GET(req: NextRequest) {
     state,
     challenge,
     mode,
+    scope: cfg.oauthScopes,
     // only providers that are switched on; otherwise a plain login
     provider: provider && cfg.socialProviders.includes(provider) ? provider : null,
   });

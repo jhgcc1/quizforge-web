@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
   if (!/^[A-Za-z0-9_.-]{2,40}$/.test(user)) {
     return new NextResponse(page("<p>Invalid user</p>", intent(form.get("mode"), form.get("provider"))), { status: 400, headers: { "content-type": "text/html" } });
   }
-  const token = await new SignJWT({})
+  const token = await new SignJWT({ name: user, email: `${user}@local.test` })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(user)
     .setIssuer("quizforge-local")

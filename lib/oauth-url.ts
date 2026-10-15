@@ -20,12 +20,27 @@ export function parseSocialProviders(v: string | undefined): SocialProvider[] {
   return out;
 }
 
+export const DEFAULT_SCOPES = "openid email";
+const ALLOWED_SCOPES = ["openid", "email", "profile"];
+
+/**
+ * OAUTH_SCOPES -> a safe scope string. Only openid/email/profile are accepted and openid is mandatory; anything else
+ * falls back to the default. `profile` must be allowed on the Cognito app client first, or the Hosted UI answers invalid_scope.
+ */
+export function parseScopes(v: string | undefined): string {
+  const out: string[] = [];
+  for (const part of (v ?? "").split(/[\s,]+/)) if (ALLOWED_SCOPES.includes(part) && !out.includes(part)) out.push(part);
+  return out.includes("openid") ? out.join(" ") : DEFAULT_SCOPES;
+}
+
 export interface AuthorizeParams {
   cognitoDomain: string;
   clientId: string;
   appUrl: string;
   state: string;
   challenge: string;
+  /** Space separated scopes; default "openid email". */
+  scope?: string;
   /** "signup" opens the Hosted UI create-account page; default is the login page. */
   mode?: "login" | "signup";
   /** Raw value from the query string: only google/facebook are accepted. */
@@ -43,7 +58,7 @@ export function buildAuthorizeUrl(p: AuthorizeParams): URL {
     response_type: "code",
     client_id: p.clientId,
     redirect_uri: `${p.appUrl}/auth/callback`,
-    scope: "openid email",
+    scope: p.scope ?? DEFAULT_SCOPES,
     state: p.state,
     code_challenge: p.challenge,
     code_challenge_method: "S256",
