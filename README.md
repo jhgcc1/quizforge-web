@@ -19,6 +19,7 @@ AUTH_MODE=local LOCAL_JWT_SECRET=<at least 32 characters> APP_URL=http://localho
 | `AUTH_MODE` | `cognito` (default) or `local` (development only, refused outside localhost) |
 | `APP_URL`, `API_URL` | Public address of this app, address of the API |
 | `COGNITO_DOMAIN`, `COGNITO_CLIENT_ID`, `COGNITO_CLIENT_SECRET` | The Cognito app client (set by the infrastructure) |
+| `OAUTH_SCOPES` | Scopes requested at login. Default `openid email`. Set `openid email profile` to get the user name (needs `profile` allowed on the Cognito app client first, otherwise the Hosted UI returns invalid_scope) |
 | `ALLOW_SIGNUP`, `SOCIAL_PROVIDERS` | Show "Create account" and the Google / Facebook buttons (`google,facebook`) |
 
 ## Checks

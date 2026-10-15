@@ -331,6 +331,42 @@ describe("UserMenu", () => {
     await waitFor(() => expect(fetch).toHaveBeenCalled());
     expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
   });
+  const me = (o: unknown) => vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(o), { status: 200 })));
+  it("shows the name, with name and e-mail in the tooltip", async () => {
+    me({ sub: "0123456789abcdef", name: "Ana Souza", email: "ana@example.com", label: "Ana Souza" });
+    render(<UserMenu />);
+    const el = await screen.findByText("Ana Souza");
+    expect(el.getAttribute("title")).toBe("Signed in as Ana Souza · ana@example.com");
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
+  });
+  it("falls back to the e-mail, then to the short id", async () => {
+    me({ sub: "0123456789abcdef", email: "ana@example.com", label: "ana@example.com" });
+    const a = render(<UserMenu />);
+    expect((await screen.findByText("ana@example.com")).getAttribute("title")).toBe("Signed in as ana@example.com");
+    a.unmount();
+    me({ sub: "0123456789abcdef", label: "01234567…" });
+    render(<UserMenu />);
+    expect((await screen.findByText("01234567…")).getAttribute("title")).toBe("Signed in (account id)");
+  });
+  it("works with a name only equal to the e-mail, and with an older {sub} answer", async () => {
+    me({ sub: "u1", name: "a@b.co", email: "a@b.co", label: "a@b.co" });
+    const a = render(<UserMenu />);
+    expect((await screen.findByText("a@b.co")).getAttribute("title")).toBe("Signed in as a@b.co");
+    a.unmount();
+    me({ sub: "0123456789abcdef" });
+    render(<UserMenu />);
+    await screen.findByText("01234567…");
+  });
+  it("truncates a very long value with CSS ellipsis and keeps the whole text accessible", async () => {
+    const long = "a-very-long-person-name-".repeat(6);
+    me({ sub: "u1", name: long, label: long });
+    render(<UserMenu />);
+    const el = await screen.findByText(long);
+    expect(el.style.textOverflow).toBe("ellipsis");
+    expect(el.style.overflow).toBe("hidden");
+    expect(el.style.whiteSpace).toBe("nowrap");
+    expect(el.style.maxWidth).toContain("40vw");
+  });
   it("keeps a short id whole", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ sub: "u1" }), { status: 200 })));
     render(<UserMenu />);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAuthorizeUrl, parseProvider, parseSocialProviders } from "./oauth-url.js";
+import { DEFAULT_SCOPES, buildAuthorizeUrl, parseScopes, parseProvider, parseSocialProviders } from "./oauth-url.js";
 
 const base = { cognitoDomain: "https://x.auth.eu-west-1.amazoncognito.com/", clientId: "cid", appUrl: "https://app.example.com", state: "st", challenge: "ch" };
 
@@ -48,5 +48,23 @@ describe("provider parsing", () => {
     expect(parseSocialProviders("google, facebook,evil,google")).toEqual(["google", "facebook"]);
     expect(parseSocialProviders("")).toEqual([]);
     expect(parseSocialProviders(undefined)).toEqual([]);
+  });
+});
+
+describe("scopes", () => {
+  it("default scope is openid email (safe until the Cognito client allows profile)", () => {
+    expect(buildAuthorizeUrl(base).searchParams.get("scope")).toBe("openid email");
+    expect(DEFAULT_SCOPES).toBe("openid email");
+  });
+  it("an explicit scope is used on login and sign-up", () => {
+    expect(buildAuthorizeUrl({ ...base, scope: "openid email profile" }).searchParams.get("scope")).toBe("openid email profile");
+    expect(buildAuthorizeUrl({ ...base, scope: "openid email profile", mode: "signup" }).searchParams.get("scope")).toBe("openid email profile");
+  });
+  it("parseScopes accepts spaces or commas, drops unknown and duplicates, requires openid", () => {
+    expect(parseScopes("openid email profile")).toBe("openid email profile");
+    expect(parseScopes("openid,email, profile ,profile,aws.cognito.signin.user.admin")).toBe("openid email profile");
+    expect(parseScopes("email profile")).toBe("openid email");
+    expect(parseScopes("")).toBe("openid email");
+    expect(parseScopes(undefined)).toBe("openid email");
   });
 });

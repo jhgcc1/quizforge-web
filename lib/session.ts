@@ -25,11 +25,13 @@ export function clearSession(res: NextResponse, cfg: WebConfig): void {
 }
 
 /** Unverified decode, for expiry checks and display only. The API verifies every token it receives. */
-export function peek(token: string | undefined): { sub?: string; exp?: number } | undefined {
+export function peek(token: string | undefined): { sub?: string; exp?: number; name?: string; email?: string } | undefined {
   if (!token) return undefined;
   try {
     const p = decodeJwt(token);
-    return { ...(p.sub ? { sub: p.sub } : {}), ...(p.exp ? { exp: p.exp } : {}) };
+    const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+    const [name, email] = [str(p.name), str(p.email)];
+    return { ...(p.sub ? { sub: p.sub } : {}), ...(p.exp ? { exp: p.exp } : {}), ...(name ? { name } : {}), ...(email ? { email } : {}) };
   } catch {
     return undefined;
   }
