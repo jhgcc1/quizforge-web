@@ -71,6 +71,17 @@ describe("auth login / logout", () => {
     expect(loc.searchParams.get("code_challenge_method")).toBe("S256");
     expect(JSON.parse(decodeURIComponent(res.cookies.get("qf_oauth")!.value)).next).toBe("/app");
   });
+  it("login without a provider does not force an identity provider; ?provider= and ?mode=signup still work", async () => {
+    vi.stubEnv("SOCIAL_PROVIDERS", "google,facebook");
+    vi.stubEnv("ALLOW_SIGNUP", "true");
+    const { GET } = await import("./auth/login/route.js");
+    const plain = new URL(GET(req("https://app.example.com/auth/login")).headers.get("location")!);
+    expect(plain.searchParams.has("identity_provider")).toBe(false);
+    const g = new URL(GET(req("https://app.example.com/auth/login?provider=google")).headers.get("location")!);
+    expect(g.searchParams.get("identity_provider")).toBe("Google");
+    const su = new URL(GET(req("https://app.example.com/auth/login?mode=signup")).headers.get("location")!);
+    expect(su.pathname).toBe("/signup");
+  });
   it("local mode: login goes to the dev route and logout returns home", async () => {
     vi.stubEnv("AUTH_MODE", "local");
     vi.stubEnv("APP_URL", "http://localhost:3000");
