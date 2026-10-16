@@ -58,6 +58,61 @@ jobs:
       - name: Next.js production build
         run: AUTH_MODE=local APP_URL=http://localhost:13000 pnpm build
 
+  # The back end is a separate repository and production runs the main of both: this is the only place where a front end
+  # change is tried against the back end it will actually meet. The Playwright suite lives in the back end repository
+  # (e2e/), which expects the front end checked out into web/ -- so this job checks out jhgcc1/quizforge main, puts THIS
+  # commit inside it, and runs that suite. No model key is needed: the worker runs with LLM_MODE=fake.
+  e2e:
+    name: e2e
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out the back end (jhgcc1/quizforge at main)
+        uses: actions/checkout@v4
+        with:
+          repository: jhgcc1/quizforge
+          ref: main
+          path: backend
+      - name: Check out this front end into backend/web
+        uses: actions/checkout@v4
+        with: { path: backend/web }
+      - name: Say which pair this ran
+        run: |
+          echo "front end \`$(git -C backend/web rev-parse --short HEAD)\` (this change) against back end \`$(git -C backend rev-parse --short HEAD)\` (main)" >> "$GITHUB_STEP_SUMMARY"
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ env.NODE_VERSION }}", cache: pnpm, cache-dependency-path: backend/pnpm-lock.yaml }
+      - name: Install the back end workspace
+        working-directory: backend
+        run: pnpm install --frozen-lockfile
+      - name: Start Postgres and the SQS emulator
+        working-directory: backend
+        run: |
+          docker compose up -d postgres elasticmq
+          for i in $(seq 1 40); do docker compose ps postgres --format '{{.Health}}' | grep -q healthy && break; sleep 2; done
+          for i in $(seq 1 30); do curl -sf "http://localhost:9324/?Action=ListQueues" >/dev/null && break; sleep 2; done
+      - name: Install Chromium
+        working-directory: backend
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Install and build this front end
+        working-directory: backend/web
+        run: |
+          pnpm install --ignore-workspace --frozen-lockfile
+          pnpm build
+        env: { AUTH_MODE: local, APP_URL: "http://localhost:13000" }
+      - name: Playwright (login -> generate -> answer -> reload -> submit -> score)
+        working-directory: backend
+        run: pnpm test:e2e
+        env: { CI: "true" }
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            backend/playwright-report
+            backend/test-results
+          retention-days: 7
+
   docker-build:
     name: docker-build
     runs-on: ubuntu-24.04
@@ -86,7 +141,7 @@ jobs:
   publish:
     name: publish
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [quality, build, docker-build, secrets-scan]
+    needs: [quality, build, e2e, docker-build, secrets-scan]
     runs-on: ubuntu-24.04-arm # native arm64 image for Graviton Fargate
     timeout-minutes: 30
     concurrency: { group: publish-image, cancel-in-progress: false }
