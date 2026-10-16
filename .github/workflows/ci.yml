@@ -79,7 +79,9 @@ jobs:
       - name: Say which pair this ran
         run: |
           echo "front end \`$(git -C backend/web rev-parse --short HEAD)\` (this change) against back end \`$(git -C backend rev-parse --short HEAD)\` (main)" >> "$GITHUB_STEP_SUMMARY"
+      # both checkouts are in subdirectories, so the action is told where the package.json with packageManager is
       - uses: pnpm/action-setup@v4
+        with: { package_json_file: backend/package.json }
       - uses: actions/setup-node@v4
         with: { node-version: "${{ env.NODE_VERSION }}", cache: pnpm, cache-dependency-path: backend/pnpm-lock.yaml }
       - name: Install the back end workspace
