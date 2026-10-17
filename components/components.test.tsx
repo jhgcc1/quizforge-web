@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const push = vi.fn();
@@ -15,6 +15,8 @@ import { CreateQuizForm } from "./CreateQuizForm";
 import { QuizList } from "./QuizList";
 import { QuizRunner } from "./QuizRunner";
 import { ResultView } from "./ResultView";
+import { RequestReview } from "./RequestReview";
+import { ReviewQueue } from "./ReviewQueue";
 import { UserMenu } from "./UserMenu";
 
 const apiMock = vi.mocked(api);
@@ -399,5 +401,130 @@ describe("error handling in the browser", () => {
     view.unmount();
     window.dispatchEvent(new ErrorEvent("error", { message: "after" }));
     expect(reportClientError).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("the document review flow", () => {
+  const refused = {
+    id: "qz", sourceUrl: "https://raw.githubusercontent.com/elastic/elasticsearch/main/README.asciidoc", topic: null, status: "failed",
+    numQuestions: 6, strategyRequested: "auto", strategyUsed: null, critique: true, createdAt: "2026-10-16T00:00:00.000Z",
+    error: "Our prompt-injection classifier rejected this document. If it is a legitimate README, you can ask for it to be reviewed and added to the document list.",
+    reviewable: true,
+  };
+
+  it("offers the review only when the API says the quiz is reviewable", async () => {
+    route({ "GET /v1/quizzes/qz": () => ({ quiz: refused, questions: [] }), "GET /v1/quizzes/qz/attempts": () => ({ attempts: [] }) });
+    render(<QuizRunner quizId="qz" />);
+    expect(await screen.findByRole("button", { name: /ask for this document to be reviewed/i })).toBeTruthy();
+
+    cleanup(); // the first render stays in the document otherwise, and the query below would find its button
+    apiMock.mockReset();
+    route({ "GET /v1/quizzes/qz": () => ({ quiz: { ...refused, reviewable: false, error: "The AI could not produce a reliable quiz" }, questions: [] }), "GET /v1/quizzes/qz/attempts": () => ({ attempts: [] }) });
+    const { container } = render(<QuizRunner quizId="qz" />);
+    await waitFor(() => expect(container.textContent).toContain("could not produce"));
+    expect(screen.queryByRole("button", { name: /ask for this document/i })).toBeNull();
+  });
+
+  it("sends the request with the quiz id, and says so when somebody already asked", async () => {
+    const quizId = "11111111-2222-4333-8444-555555555555"; // the client validates the contract before sending
+    apiMock.mockReset();
+    apiMock.mockResolvedValue({ data: { id: "req-1" }, replayed: false, status: 201 } as never);
+    render(<RequestReview quizId={quizId} sourceUrl="https://example.invalid/readme.md" />);
+    fireEvent.click(screen.getByRole("button", { name: /ask for this document/i }));
+    fireEvent.change(screen.getByLabelText(/name for the document/i), { target: { value: "Elasticsearch" } });
+    fireEvent.click(screen.getByRole("button", { name: /send request/i }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toMatch(/an administrator will look/i));
+    expect(apiMock.mock.calls[0]![1]!.body).toMatchObject({ quizId, title: "Elasticsearch" });
+
+    cleanup();
+    apiMock.mockReset();
+    apiMock.mockRejectedValue(new ApiError(409, "request_already_open", "already"));
+    render(<RequestReview quizId="99999999-2222-4333-8444-555555555555" sourceUrl="https://example.invalid/x.md" />);
+    fireEvent.click(screen.getByRole("button", { name: /ask for this document/i }));
+    fireEvent.change(screen.getByLabelText(/name for the document/i), { target: { value: "Again" } });
+    fireEvent.click(screen.getByRole("button", { name: /send request/i }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/already asked/i));
+  });
+
+  it("sends the note when the user writes one, and closing the form sends nothing", async () => {
+    const quizId = "22222222-2222-4333-8444-555555555555";
+    apiMock.mockReset();
+    apiMock.mockResolvedValue({ data: { id: "req-3" }, replayed: false, status: 201 } as never);
+    render(<RequestReview quizId={quizId} sourceUrl="https://example.invalid/readme.md" />);
+    fireEvent.click(screen.getByRole("button", { name: /ask for this document/i }));
+    fireEvent.change(screen.getByLabelText(/name for the document/i), { target: { value: "Pure Bash Bible" } });
+    fireEvent.change(screen.getByLabelText(/why do you think it is safe/i), { target: { value: "A well-known shell cookbook" } });
+    fireEvent.click(screen.getByRole("button", { name: /send request/i }));
+    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
+    expect(apiMock.mock.calls[0]![1]!.body).toMatchObject({ note: "A well-known shell cookbook" });
+
+    cleanup();
+    apiMock.mockReset();
+    render(<RequestReview quizId={quizId} sourceUrl="https://example.invalid/readme.md" />);
+    fireEvent.click(screen.getByRole("button", { name: /ask for this document/i }));
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    expect(screen.getByRole("button", { name: /ask for this document/i })).toBeTruthy(); // back to the offer
+    expect(apiMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses to send a request without a usable title", async () => {
+    apiMock.mockReset();
+    render(<RequestReview quizId="11111111-2222-4333-8444-555555555555" sourceUrl="https://example.invalid/readme.md" />);
+    fireEvent.click(screen.getByRole("button", { name: /ask for this document/i }));
+    fireEvent.click(screen.getByRole("button", { name: /send request/i }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/at least two characters/i));
+    expect(apiMock).not.toHaveBeenCalled();
+  });
+
+  it("shows the reviewer the score and the excerpt, and removes a decided request from the queue", async () => {
+    const item = { id: "req-1", url: "https://raw.githubusercontent.com/elastic/elasticsearch/main/README.asciidoc", title: "Elasticsearch", description: null, note: "Real project", status: "pending", detectorScore: 0.97, excerpt: "the classifier scored 0.97 for prompt injection", createdAt: "2026-10-16T00:00:00.000Z", reviewedAt: null, reviewNote: null };
+    apiMock.mockReset();
+    route({ "GET /v1/document-requests": () => ({ items: [item] }), "POST /v1/document-requests/req-1/review": () => ({ ...item, status: "approved" }) });
+    const { container } = render(<ReviewQueue />);
+    await screen.findByText("Elasticsearch");
+    expect(container.textContent).toContain("0.97");
+    expect(container.textContent).toContain("the classifier scored");
+    expect(container.textContent).toMatch(/adds this document to the list everyone/i);
+
+    fireEvent.click(screen.getByRole("button", { name: /approve and add/i }));
+    await waitFor(() => expect(screen.queryByText("Elasticsearch")).toBeNull());
+  });
+
+  it("keeps the request on screen and says what happened when the decision fails", async () => {
+    const item = { id: "req-2", url: "https://raw.githubusercontent.com/o/r/HEAD/README.md", title: "Something", description: null, note: null, status: "pending", detectorScore: 0.95, excerpt: "the classifier scored 0.95", createdAt: "2026-10-16T00:00:00.000Z", reviewedAt: null, reviewNote: null };
+    apiMock.mockReset();
+    route({ "GET /v1/document-requests": () => ({ items: [item] }), "POST /v1/document-requests/req-2/review": () => new Error("the database is away") });
+    render(<ReviewQueue />);
+    await screen.findByText("Something");
+    fireEvent.click(screen.getByRole("button", { name: /reject/i }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/database is away/i));
+  });
+
+  it("says when nothing is waiting, instead of showing an empty page", async () => {
+    apiMock.mockReset();
+    route({ "GET /v1/document-requests": () => ({ items: [] }) });
+    render(<ReviewQueue />);
+    await waitFor(() => expect(screen.getByText(/nothing is waiting/i)).toBeTruthy());
+  });
+
+  it("tells a non-admin that the queue is not for them", async () => {
+    apiMock.mockReset();
+    apiMock.mockRejectedValue(new ApiError(403, "forbidden", "nope"));
+    render(<ReviewQueue />);
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/for administrators/i));
+  });
+
+  it("shows the review link in the menu only for an administrator", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ sub: "u", label: "Ada", admin: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<UserMenu />);
+    expect(await screen.findByRole("link", { name: /review queue/i })).toBeTruthy();
+
+    cleanup();
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ sub: "u", label: "Ada", admin: false }) });
+    const { container } = render(<UserMenu />);
+    await waitFor(() => expect(container.textContent).toContain("Ada"));
+    expect(container.querySelector('a[href="/app/review"]')).toBeNull();
+    vi.unstubAllGlobals();
   });
 });

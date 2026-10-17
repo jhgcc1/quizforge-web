@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AttemptListSchema, AttemptResultSchema, AttemptWithAnswersSchema, QuizWithQuestionsSchema, SaveAnswerResponseSchema, SubmitResponseSchema } from "@quizforge/contract";
 import { z } from "zod";
+import { RequestReview } from "./RequestReview";
 import { ApiError, api, newKey, type AttemptResult, type PublicQuestion, type QuizSummary } from "@/lib/api";
 import { phaseLabel, progressFraction } from "@/lib/progress";
 import { ResultView } from "./ResultView";
@@ -147,6 +148,9 @@ export function QuizRunner({ quizId }: { quizId: string }) {
       <section className="card">
         <h1>We couldn’t generate this quiz</h1>
         <p className="alert error" role="alert">{quiz.error ?? "Unknown error"}</p>
+        {/* The classifier refusing a document is the one failure the user can act on: it is wrong often enough on real
+            READMEs that a person should be able to ask for a second look. The API says so on the quiz (`reviewable`). */}
+        {quiz.reviewable ? <RequestReview quizId={quiz.id} sourceUrl={quiz.sourceUrl} /> : null}
         <a className="btn" href="/app">Back to dashboard</a>
       </section>
     );

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 
-interface Me { sub?: string | null; name?: string; email?: string; label?: string | null }
+interface Me { sub?: string | null; name?: string; email?: string; label?: string | null; admin?: boolean }
 
 const short = (s: string) => (s.length > 14 ? `${s.slice(0, 8)}…` : s);
 
@@ -18,6 +18,8 @@ export function UserMenu() {
   const who = [me?.name, me?.email && me.email !== me.name ? me.email : undefined].filter(Boolean).join(" · ");
   return (
     <form method="post" action="/auth/logout" className="row" style={{ minWidth: 0 }}>
+      {/* Only shown to an administrator; the API authorises the data itself, this is just the way in. */}
+      {me?.admin ? <a className="small" href="/app/review">Review queue</a> : null}
       {label && (
         <span
           className="muted small"

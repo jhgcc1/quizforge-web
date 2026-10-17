@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@quizforge/contract':
-        specifier: https://github.com/jhgcc1/quizforge/releases/download/contract-v1.1.0/quizforge-contract-1.1.0.tgz
-        version: https://github.com/jhgcc1/quizforge/releases/download/contract-v1.1.0/quizforge-contract-1.1.0.tgz
+        specifier: https://github.com/jhgcc1/quizforge/releases/download/contract-v1.2.0/quizforge-contract-1.2.0.tgz
+        version: https://github.com/jhgcc1/quizforge/releases/download/contract-v1.2.0/quizforge-contract-1.2.0.tgz
       jose:
         specifier: ^6.2.12
         version: 6.2.12
@@ -592,9 +592,9 @@ packages:
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
     engines: {node: '>=14'}
 
-  '@quizforge/contract@https://github.com/jhgcc1/quizforge/releases/download/contract-v1.1.0/quizforge-contract-1.1.0.tgz':
-    resolution: {integrity: sha512-GV35KpxnVv0nbCFAV1sTGeNb5jmYR5CuAEpOdmSELMJGSqKoi8gjs/+CkzlLfF7GWnt9xZNkGUMiiUZ3uUdYkA==, tarball: https://github.com/jhgcc1/quizforge/releases/download/contract-v1.1.0/quizforge-contract-1.1.0.tgz}
-    version: 1.1.0
+  '@quizforge/contract@https://github.com/jhgcc1/quizforge/releases/download/contract-v1.2.0/quizforge-contract-1.2.0.tgz':
+    resolution: {integrity: sha512-Wrz70MIcwh7EtV5CNfhw2XhY4AUGmELE1i0PPfFGXwer08tj8YcgILXaknBjEYgfm2XethUzcgU7BMA5xfDmPQ==, tarball: https://github.com/jhgcc1/quizforge/releases/download/contract-v1.2.0/quizforge-contract-1.2.0.tgz}
+    version: 1.2.0
 
   '@rollup/rollup-android-arm-eabi@4.64.6':
     resolution: {integrity: sha512-FkO19Fowv/OQeJZPVfdetJaI3/VpbZmBsnmAlR/rQ+b3QwfiGQiOpVegpSRH331kelvHTVw9hXYG3DwjAaRzyQ==}
@@ -2180,7 +2180,7 @@ snapshots:
   '@pkgjs/parseargs@0.11.0':
     optional: true
 
-  '@quizforge/contract@https://github.com/jhgcc1/quizforge/releases/download/contract-v1.1.0/quizforge-contract-1.1.0.tgz':
+  '@quizforge/contract@https://github.com/jhgcc1/quizforge/releases/download/contract-v1.2.0/quizforge-contract-1.2.0.tgz':
     dependencies:
       zod: 3.25.76
 
