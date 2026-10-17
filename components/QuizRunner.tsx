@@ -150,8 +150,13 @@ export function QuizRunner({ quizId }: { quizId: string }) {
         <p className="alert error" role="alert">{quiz.error ?? "Unknown error"}</p>
         {/* The classifier refusing a document is the one failure the user can act on: it is wrong often enough on real
             READMEs that a person should be able to ask for a second look. The API says so on the quiz (`reviewable`). */}
-        {quiz.reviewable ? <RequestReview quizId={quiz.id} sourceUrl={quiz.sourceUrl} /> : null}
-        <a className="btn" href="/app">Back to dashboard</a>
+        {quiz.reviewable ? (
+          <RequestReview quizId={quiz.id} sourceUrl={quiz.sourceUrl}>
+            <a className="btn secondary" href="/app">Back to dashboard</a>
+          </RequestReview>
+        ) : (
+          <div className="row actions"><a className="btn" href="/app">Back to dashboard</a></div>
+        )}
       </section>
     );
   }

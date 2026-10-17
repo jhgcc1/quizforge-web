@@ -46,7 +46,7 @@ export function ReviewQueue() {
       {items.map((r) => (
         <li key={r.id} className="card">
           <h2>{r.title}</h2>
-          <p className="small">
+          <p className="small break">
             <a href={r.url} target="_blank" rel="noreferrer noopener">{r.url}</a>
           </p>
           {r.description ? <p>{r.description}</p> : null}
@@ -58,11 +58,11 @@ export function ReviewQueue() {
           <p className="muted small">
             Approving adds this document to the list everyone can pick from. Open the link and read it first.
           </p>
-          <div className="row">
+          <div className="row actions">
             <button type="button" className="btn primary" disabled={busy === r.id} onClick={() => decide(r.id, "approve")}>
-              Approve and add to the list
+              {busy === r.id ? "Working…" : "Approve and add to the list"}
             </button>
-            <button type="button" className="btn" disabled={busy === r.id} onClick={() => decide(r.id, "reject")}>
+            <button type="button" className="btn secondary" disabled={busy === r.id} onClick={() => decide(r.id, "reject")}>
               Reject
             </button>
           </div>
