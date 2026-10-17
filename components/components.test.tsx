@@ -12,6 +12,7 @@ import { reportClientError } from "@/lib/client-log";
 import ErrorPage from "@/app/error";
 import { ClientErrorReporter } from "./ClientErrorReporter";
 import { CreateQuizForm } from "./CreateQuizForm";
+import { DocumentPicker } from "./DocumentPicker";
 import { QuizList } from "./QuizList";
 import { QuizRunner } from "./QuizRunner";
 import { ResultView } from "./ResultView";
@@ -526,5 +527,81 @@ describe("the document review flow", () => {
     await waitFor(() => expect(container.textContent).toContain("Ada"));
     expect(container.querySelector('a[href="/app/review"]')).toBeNull();
     vi.unstubAllGlobals();
+  });
+});
+
+describe("DocumentPicker", () => {
+  const entry = (id: string, kind: "readme" | "test" | "used", title: string, description = "d", url = `https://x/${id}`) =>
+    ({ id, kind, title, description, url, language: "en", size: "short", tests: "t" }) as never;
+  const catalog = [
+    entry("a", "readme", "Elasticsearch", "Search engine"),
+    entry("b", "readme", "Hono", "Small web framework"),
+    entry("c", "test", "Orbit Scheduler", "prompt injection"),
+    entry("d", "used", "pure-bash-bible", "bash recipes"),
+  ];
+  const open = () => fireEvent.focus(screen.getByRole("combobox"));
+
+  afterEach(cleanup);
+
+  it("groups the entries and offers the paste-a-URL option", () => {
+    render(<DocumentPicker catalog={catalog} loading={false} value="a" onChange={() => {}} />);
+    open();
+    expect(screen.getByText("Real project READMEs")).toBeTruthy();
+    expect(screen.getByText("Used before")).toBeTruthy();
+    expect(screen.getByText("Other: paste a URL…")).toBeTruthy();
+  });
+
+  it("filters on title, description and url, and every word must match", () => {
+    render(<DocumentPicker catalog={catalog} loading={false} value="a" onChange={() => {}} />);
+    open();
+    const input = screen.getByRole("combobox");
+    fireEvent.change(input, { target: { value: "elastic" } });
+    expect(screen.queryByText("Hono")).toBeNull();
+    expect(screen.getByText("Elasticsearch")).toBeTruthy();
+
+    fireEvent.change(input, { target: { value: "small framework" } }); // words out of order
+    expect(screen.getByText("Hono")).toBeTruthy();
+
+    fireEvent.change(input, { target: { value: "x/d" } }); // the url
+    expect(screen.getByText("pure-bash-bible")).toBeTruthy();
+  });
+
+  it("says so when nothing matches", () => {
+    render(<DocumentPicker catalog={catalog} loading={false} value="a" onChange={() => {}} />);
+    open();
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "zzzz" } });
+    expect(screen.getByText(/No document matches/)).toBeTruthy();
+  });
+
+  it("picks with the keyboard and reports the chosen id", () => {
+    const onChange = vi.fn();
+    render(<DocumentPicker catalog={catalog} loading={false} value="" onChange={onChange} />);
+    const input = screen.getByRole("combobox");
+    fireEvent.keyDown(input, { key: "ArrowDown" }); // opens
+    fireEvent.keyDown(input, { key: "ArrowDown" }); // second option
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onChange).toHaveBeenCalledWith("b");
+  });
+
+  it("Escape closes without choosing", () => {
+    const onChange = vi.fn();
+    render(<DocumentPicker catalog={catalog} loading={false} value="a" onChange={onChange} />);
+    open();
+    expect(screen.getByRole("listbox")).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("shows the chosen title when closed, and marks it selected when open", () => {
+    render(<DocumentPicker catalog={catalog} loading={false} value="c" onChange={() => {}} />);
+    expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe("Orbit Scheduler");
+    open();
+    expect(screen.getByRole("option", { selected: true }).textContent).toContain("Orbit Scheduler");
+  });
+
+  it("is disabled while the catalogue loads", () => {
+    render(<DocumentPicker catalog={null} loading onChange={() => {}} value="" />);
+    expect((screen.getByRole("combobox") as HTMLInputElement).disabled).toBe(true);
   });
 });

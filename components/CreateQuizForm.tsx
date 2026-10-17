@@ -3,8 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CatalogResponseSchema, CreateQuizBodySchema, QuizEnvelopeSchema } from "@quizforge/contract";
 import { ApiError, api, newKey, type CatalogEntry } from "@/lib/api";
+import { CUSTOM, DocumentPicker } from "./DocumentPicker";
 
-const CUSTOM = "__custom__";
 const LANGUAGE = { en: "English", pt: "Portuguese", es: "Spanish" } as const;
 const SIZE = { short: "short", medium: "medium", long: "long" } as const;
 
@@ -43,13 +43,6 @@ export function CreateQuizForm() {
   }, []);
 
   const entry = useMemo(() => catalog?.find((e) => e.id === selected), [catalog, selected]);
-  const groups = useMemo(
-    () => [
-      { label: "Real project READMEs", items: (catalog ?? []).filter((e) => e.kind === "readme") },
-      { label: "Test documents (each checks one behaviour)", items: (catalog ?? []).filter((e) => e.kind === "test") },
-    ],
-    [catalog],
-  );
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -78,16 +71,8 @@ export function CreateQuizForm() {
       <h2>Create a quiz</h2>
       <div className="grid">
         <div>
-          <label htmlFor="preset">Document</label>
-          <select id="preset" value={selected} onChange={(e) => setSelected(e.target.value)} disabled={!catalog && !catalogError}>
-            {!catalog && !catalogError && <option value="">Loading documents…</option>}
-            {groups.map((g) => g.items.length > 0 && (
-              <optgroup key={g.label} label={g.label}>
-                {g.items.map((it) => <option key={it.id} value={it.id}>{it.title}</option>)}
-              </optgroup>
-            ))}
-            <option value={CUSTOM}>Other: paste a URL…</option>
-          </select>
+          <label htmlFor="preset-input">Document</label>
+          <DocumentPicker catalog={catalog} loading={!catalog && !catalogError} value={selected} onChange={setSelected} />
           {entry && (
             <p className="muted" id="doc-info" style={{ margin: "6px 0 0", fontSize: 13 }}>
               {entry.description}. {LANGUAGE[entry.language]}, {SIZE[entry.size]}. <strong>Tests:</strong> {entry.tests}.
