@@ -9,6 +9,8 @@ export interface Profile {
   email?: string;
   /** What the top bar shows: name, else e-mail, else a short id (never null when sub is known). */
   label: string | null;
+  /** True when the token carries the `admin` group. The browser uses it to show the review queue; the API still decides. */
+  admin: boolean;
 }
 
 const TTL_MS = 60_000;
@@ -65,5 +67,5 @@ export async function loadProfile(cfg: WebConfig, token: string): Promise<Profil
       cache.set(key, { at: Date.now(), ttl: data.name || data.email ? TTL_MS : FAIL_TTL_MS, data });
     }
   }
-  return { sub, ...data, label: data.name ?? data.email ?? shortSub(sub) };
+  return { sub, ...data, label: data.name ?? data.email ?? shortSub(sub), admin: (claims?.groups ?? []).includes("admin") };
 }

@@ -29,13 +29,13 @@ describe("GET /bff/me", () => {
     const res = await GET(req(`qf_at=${t}`));
     expect(res.status).toBe(200);
     const text = await res.text();
-    expect(JSON.parse(text)).toEqual({ sub: "s-1", name: "Ana", email: "ana@example.com", label: "Ana" });
+    expect(JSON.parse(text)).toEqual({ sub: "s-1", name: "Ana", email: "ana@example.com", label: "Ana", admin: false });
     expect(text).not.toContain(t);
   });
   it("falls back to the sub when userInfo fails", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("down")));
     const res = await GET(req(`qf_at=${await jwt({ sub: "s-2" })}`));
-    expect(await res.json()).toEqual({ sub: "s-2", label: "s-2" });
+    expect(await res.json()).toEqual({ sub: "s-2", label: "s-2", admin: false });
   });
   it("a refreshed session is written back as cookies", async () => {
     const fresh = await jwt({ sub: "s-3" });

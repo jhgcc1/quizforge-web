@@ -18,13 +18,13 @@ describe("loadProfile (cognito)", () => {
     const f = vi.fn().mockResolvedValue(json({ sub: SUB, name: "Ana Souza", email: "ana@example.com" }));
     vi.stubGlobal("fetch", f);
     const t = await jwt({ sub: SUB });
-    expect(await loadProfile(cfg, t)).toEqual({ sub: SUB, name: "Ana Souza", email: "ana@example.com", label: "Ana Souza" });
+    expect(await loadProfile(cfg, t)).toEqual({ sub: SUB, name: "Ana Souza", email: "ana@example.com", label: "Ana Souza", admin: false });
     expect(f.mock.calls[0]![0]).toBe("https://auth.example.com/oauth2/userInfo");
     expect(f.mock.calls[0]![1].headers.authorization).toBe(`Bearer ${t}`);
   });
   it("only e-mail: label is the e-mail; preferred_username is used when there is no name", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({ email: " a@b.co " })));
-    expect(await loadProfile(cfg, await jwt({ sub: SUB }))).toEqual({ sub: SUB, email: "a@b.co", label: "a@b.co" });
+    expect(await loadProfile(cfg, await jwt({ sub: SUB }))).toEqual({ sub: SUB, email: "a@b.co", label: "a@b.co", admin: false });
     clearProfileCache();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({ preferred_username: "ana", email: "a@b.co" })));
     expect(await loadProfile(cfg, await jwt({ sub: SUB }))).toMatchObject({ name: "ana", label: "ana" });
@@ -41,7 +41,7 @@ describe("loadProfile (cognito)", () => {
     ]) {
       clearProfileCache();
       vi.stubGlobal("fetch", f);
-      expect(await loadProfile(cfg, t)).toEqual({ sub: SUB, label: "91fb15b0…" });
+      expect(await loadProfile(cfg, t)).toEqual({ sub: SUB, label: "91fb15b0…", admin: false });
     }
   });
   it("asks userInfo with a timeout signal", async () => {
@@ -78,7 +78,7 @@ describe("loadProfile (cognito)", () => {
   });
   it("a token without sub still yields an empty label", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({})));
-    expect(await loadProfile(cfg, await jwt({}))).toEqual({ sub: null, label: null });
+    expect(await loadProfile(cfg, await jwt({}))).toEqual({ sub: null, label: null, admin: false });
   });
 });
 
@@ -87,8 +87,18 @@ describe("loadProfile (local simulation)", () => {
     const f = vi.fn();
     vi.stubGlobal("fetch", f);
     const local = { ...cfg, authMode: "local" as const };
-    expect(await loadProfile(local, await jwt({ sub: "dev-user", name: "dev-user", email: "dev-user@local.test" }))).toEqual({ sub: "dev-user", name: "dev-user", email: "dev-user@local.test", label: "dev-user" });
-    expect(await loadProfile(local, await jwt({ sub: "x" }))).toEqual({ sub: "x", label: "x" });
+    expect(await loadProfile(local, await jwt({ sub: "dev-user", name: "dev-user", email: "dev-user@local.test" }))).toEqual({ sub: "dev-user", name: "dev-user", email: "dev-user@local.test", label: "dev-user", admin: false });
+    expect(await loadProfile(local, await jwt({ sub: "x" }))).toEqual({ sub: "x", label: "x", admin: false });
+  });
+
+  it("is an administrator only when the token carries the admin group", async () => {
+    const f = vi.fn();
+    vi.stubGlobal("fetch", f);
+    const local = { ...cfg, authMode: "local" as const };
+    const inGroup = await jwt({ sub: "boss", "cognito:groups": ["admin"] });
+    expect((await loadProfile(local, inGroup)).admin).toBe(true);
+    expect((await loadProfile(local, await jwt({ sub: "boss", "cognito:groups": ["admins", "staff"] }))).admin).toBe(false);
+    expect((await loadProfile(local, await jwt({ sub: "boss", "cognito:groups": "admin" }))).admin).toBe(false); // not a list: ignored
     expect(f).not.toHaveBeenCalled();
   });
 });
