@@ -18,6 +18,7 @@ export function CreateQuizForm() {
   const [num, setNum] = useState(6);
   const [strategy, setStrategy] = useState("auto");
   const [critique, setCritique] = useState(true);
+  const [refresh, setRefresh] = useState(false);
   const [busy, setBusy] = useState(false);
   // Until React has hydrated, edits to the form would be reset and a click would do a native submit.
   const [ready, setReady] = useState(false);
@@ -43,6 +44,8 @@ export function CreateQuizForm() {
   }, []);
 
   const entry = useMemo(() => catalog?.find((e) => e.id === selected), [catalog, selected]);
+  // A document that came from the list has been read before, so there is a saved copy to choose between.
+  const known = entry !== undefined && selected !== CUSTOM;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -50,7 +53,7 @@ export function CreateQuizForm() {
     const sourceUrl = selected === CUSTOM ? custom.trim() : entry?.url;
     if (!sourceUrl) return setError("Choose a document, or enter the URL of a Markdown file.");
     // The same schema the API enforces, so mistakes are explained here instead of after a round trip.
-    const checked = CreateQuizBodySchema.safeParse({ sourceUrl, ...(topic.trim() ? { topic: topic.trim() } : {}), numQuestions: num, strategy, critique });
+    const checked = CreateQuizBodySchema.safeParse({ sourceUrl, ...(topic.trim() ? { topic: topic.trim() } : {}), numQuestions: num, strategy, critique, refresh });
     if (!checked.success) return setError(checked.error.issues[0]?.message ?? "Check the form and try again.");
     const body = checked.data;
     const fp = JSON.stringify(body);
@@ -109,6 +112,17 @@ export function CreateQuizForm() {
           <input type="checkbox" checked={critique} onChange={(e) => setCritique(e.target.checked)} /> Review questions with a second AI pass (slower, higher quality)
         </label>
       </p>
+      {/* Only for a document already in the list: a URL nobody has read yet is downloaded whatever this says. */}
+      {known && (
+        <p className="row">
+          <label className="row" style={{ margin: 0, fontWeight: 500 }}>
+            <input type="checkbox" checked={refresh} onChange={(e) => setRefresh(e.target.checked)} /> Download the document again
+          </label>
+          <span className="muted small">
+            {refresh ? "Reads the current version from GitHub." : "Uses the copy saved the last time it was read."}
+          </span>
+        </p>
+      )}
       {error && <p className="alert error" role="alert">{error}</p>}
       <button className="btn" type="submit" disabled={busy || !ready || !selected}>{busy ? <><span className="spinner" aria-hidden /> Creating…</> : "Generate quiz"}</button>
     </form>
