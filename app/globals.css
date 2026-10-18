@@ -46,6 +46,10 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-
 .alert.error { background: var(--bad-bg); color: var(--bad); border-color: var(--bad); } .alert.info { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
 .alert.ok { background: var(--ok-bg); color: var(--ok); border-color: var(--ok); }
 .list { list-style: none; padding: 0; margin: 0; } .list li { padding: 12px 0; border-top: 1px solid var(--border); } .list li:first-child { border-top: 0; }
+/* A row that is itself a card (the review queue) keeps the card's box. `.list li` is (0,1,1) and `.card` is (0,1,0),
+   so the list was winning and flattening the horizontal padding to zero — the content sat against the border — and
+   drawing a separator line inside something that already has its own. */
+.list li.card { padding: 20px; border-top: 0; }
 .progress { height: 8px; background: var(--border); border-radius: 999px; overflow: hidden; } .progress > div { height: 100%; background: var(--brand); transition: width .2s; }
 .opt { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; margin: 8px 0; cursor: pointer; background: var(--surface); }
 .opt:hover { border-color: var(--brand); } .opt.selected { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 10%, var(--surface)); }
