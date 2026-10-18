@@ -12,7 +12,7 @@ import { reportClientError } from "@/lib/client-log";
 import ErrorPage from "@/app/error";
 import { ClientErrorReporter } from "./ClientErrorReporter";
 import { CreateQuizForm } from "./CreateQuizForm";
-import { DocumentPicker } from "./DocumentPicker";
+import { CUSTOM, DocumentPicker } from "./DocumentPicker";
 import { QuizList } from "./QuizList";
 import { QuizRunner } from "./QuizRunner";
 import { ResultView } from "./ResultView";
@@ -48,6 +48,21 @@ describe("CreateQuizForm", () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith("/app/quiz/q-1"));
     const call = apiMock.mock.calls.find(([p]) => p === "/v1/quizzes")![1]!;
     expect(call).toMatchObject({ method: "POST", idempotencyKey: "key-1", body: { topic: "agents", numQuestions: 7, critique: false, strategy: "auto" } });
+  });
+  it("sends the URL of the document chosen in the picker", async () => {
+    route({
+      "GET /v1/catalog": () => ({ items: [entry(), entry({ id: "t1", title: "Tiny", kind: "test", url: "https://raw.githubusercontent.com/o/t/main/R.md" })] }),
+      "POST /v1/quizzes": () => ({ quiz: { id: "q-2" } }),
+    });
+    render(<CreateQuizForm />);
+    await screen.findByText(/Voice agents/);
+    fireEvent.focus(screen.getByLabelText("Document"));
+    fireEvent.mouseDown(screen.getByText("Tiny"));
+    fireEvent.click(screen.getByRole("button", { name: "Generate quiz" }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/app/quiz/q-2"));
+    expect(apiMock.mock.calls.find(([p]) => p === "/v1/quizzes")![1]!).toMatchObject({
+      body: { sourceUrl: "https://raw.githubusercontent.com/o/t/main/R.md" },
+    });
   });
   it("falls back to a pasted URL when the catalog fails, and shows a message for an empty URL", async () => {
     route({ "GET /v1/catalog": () => new Error("down") });
@@ -539,7 +554,7 @@ describe("DocumentPicker", () => {
     entry("c", "test", "Orbit Scheduler", "prompt injection"),
     entry("d", "used", "pure-bash-bible", "bash recipes"),
   ];
-  const open = () => fireEvent.focus(screen.getByRole("combobox"));
+  const open = () => fireEvent.focus(screen.getByLabelText("Document"));
 
   afterEach(cleanup);
 
@@ -554,7 +569,7 @@ describe("DocumentPicker", () => {
   it("filters on title, description and url, and every word must match", () => {
     render(<DocumentPicker catalog={catalog} loading={false} value="a" onChange={() => {}} />);
     open();
-    const input = screen.getByRole("combobox");
+    const input = screen.getByLabelText("Document");
     fireEvent.change(input, { target: { value: "elastic" } });
     expect(screen.queryByText("Hono")).toBeNull();
     expect(screen.getByText("Elasticsearch")).toBeTruthy();
@@ -569,14 +584,14 @@ describe("DocumentPicker", () => {
   it("says so when nothing matches", () => {
     render(<DocumentPicker catalog={catalog} loading={false} value="a" onChange={() => {}} />);
     open();
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "zzzz" } });
+    fireEvent.change(screen.getByLabelText("Document"), { target: { value: "zzzz" } });
     expect(screen.getByText(/No document matches/)).toBeTruthy();
   });
 
   it("picks with the keyboard and reports the chosen id", () => {
     const onChange = vi.fn();
     render(<DocumentPicker catalog={catalog} loading={false} value="" onChange={onChange} />);
-    const input = screen.getByRole("combobox");
+    const input = screen.getByLabelText("Document");
     fireEvent.keyDown(input, { key: "ArrowDown" }); // opens
     fireEvent.keyDown(input, { key: "ArrowDown" }); // second option
     fireEvent.keyDown(input, { key: "Enter" });
@@ -588,20 +603,93 @@ describe("DocumentPicker", () => {
     render(<DocumentPicker catalog={catalog} loading={false} value="a" onChange={onChange} />);
     open();
     expect(screen.getByRole("listbox")).toBeTruthy();
-    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Escape" });
+    fireEvent.keyDown(screen.getByLabelText("Document"), { key: "Escape" });
     expect(screen.queryByRole("listbox")).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
   });
 
   it("shows the chosen title when closed, and marks it selected when open", () => {
     render(<DocumentPicker catalog={catalog} loading={false} value="c" onChange={() => {}} />);
-    expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe("Orbit Scheduler");
+    expect((screen.getByLabelText("Document") as HTMLInputElement).value).toBe("Orbit Scheduler");
     open();
     expect(screen.getByRole("option", { selected: true }).textContent).toContain("Orbit Scheduler");
   });
 
   it("is disabled while the catalogue loads", () => {
     render(<DocumentPicker catalog={null} loading onChange={() => {}} value="" />);
-    expect((screen.getByRole("combobox") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText("Document") as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it("picks with the mouse, both a document and the paste-a-URL row", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<DocumentPicker catalog={catalog} loading={false} value="" onChange={onChange} />);
+    open();
+    fireEvent.mouseDown(screen.getByText("Orbit Scheduler"));
+    expect(onChange).toHaveBeenCalledWith("c");
+
+    rerender(<DocumentPicker catalog={catalog} loading={false} value="" onChange={onChange} />);
+    open();
+    fireEvent.mouseDown(screen.getByText("Other: paste a URL…"));
+    expect(onChange).toHaveBeenCalledWith(CUSTOM);
+  });
+
+  it("ArrowUp wraps to the last row, and End jumps to it", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<DocumentPicker catalog={catalog} loading={false} value="" onChange={onChange} />);
+    const input = screen.getByLabelText("Document");
+    fireEvent.keyDown(input, { key: "ArrowDown" }); // opens on the first row
+    fireEvent.keyDown(input, { key: "ArrowUp" }); // wraps past the top to the last row, which is the paste-a-URL one
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onChange).toHaveBeenLastCalledWith(CUSTOM);
+
+    onChange.mockClear();
+    rerender(<DocumentPicker catalog={catalog} loading={false} value="" onChange={onChange} />);
+    open();
+    fireEvent.keyDown(screen.getByLabelText("Document"), { key: "End" });
+    fireEvent.keyDown(screen.getByLabelText("Document"), { key: "Enter" });
+    expect(onChange).toHaveBeenLastCalledWith(CUSTOM);
+  });
+
+  it("Home jumps back to the first row", () => {
+    const onChange = vi.fn();
+    render(<DocumentPicker catalog={catalog} loading={false} value="" onChange={onChange} />);
+    const input = screen.getByLabelText("Document");
+    open();
+    fireEvent.keyDown(input, { key: "End" });
+    fireEvent.keyDown(input, { key: "Home" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onChange).toHaveBeenCalledWith("a");
+  });
+
+  it("the keys do nothing while the list is closed", () => {
+    const onChange = vi.fn();
+    render(<DocumentPicker catalog={catalog} loading={false} value="a" onChange={onChange} />);
+    const input = screen.getByLabelText("Document");
+    for (const key of ["Enter", "Home", "End", "Escape", "a"]) fireEvent.keyDown(input, { key });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("shows the paste-a-URL label when that is what is chosen, and copes with no catalogue at all", () => {
+    const { rerender } = render(<DocumentPicker catalog={catalog} loading={false} value={CUSTOM} onChange={() => {}} />);
+    expect((screen.getByLabelText("Document") as HTMLInputElement).value).toBe("Other: paste a URL…");
+    rerender(<DocumentPicker catalog={null} loading={false} value="" onChange={() => {}} />);
+    fireEvent.focus(screen.getByLabelText("Document"));
+    expect(screen.getByText("Other: paste a URL…")).toBeTruthy();
+  });
+
+  it("a click outside closes the list without choosing", () => {
+    const onChange = vi.fn();
+    render(
+      <div>
+        <button type="button">elsewhere</button>
+        <DocumentPicker catalog={catalog} loading={false} value="a" onChange={onChange} />
+      </div>,
+    );
+    open();
+    expect(screen.getByRole("listbox")).toBeTruthy();
+    fireEvent.mouseDown(screen.getByRole("button", { name: "elsewhere" }));
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
   });
 });

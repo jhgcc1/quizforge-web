@@ -35,11 +35,13 @@ export function DocumentPicker({
   loading,
   value,
   onChange,
+  label = "Document",
 }: {
   catalog: CatalogEntry[] | null;
   loading: boolean;
   value: string;
   onChange: (id: string) => void;
+  label?: string;
 }) {
   const id = useId();
   const [open, setOpen] = useState(false);
@@ -111,6 +113,8 @@ export function DocumentPicker({
   let optionIndex = -1;
   return (
     <div className="combo" ref={boxRef}>
+      {/* The label belongs to the component: the input id comes from useId(), so no caller can write a matching htmlFor. */}
+      <label htmlFor={`${id}-input`}>{label}</label>
       <input
         ref={inputRef}
         id={`${id}-input`}

@@ -71,7 +71,6 @@ export function CreateQuizForm() {
       <h2>Create a quiz</h2>
       <div className="grid">
         <div>
-          <label htmlFor="preset-input">Document</label>
           <DocumentPicker catalog={catalog} loading={!catalog && !catalogError} value={selected} onChange={setSelected} />
           {entry && (
             <p className="muted" id="doc-info" style={{ margin: "6px 0 0", fontSize: 13 }}>

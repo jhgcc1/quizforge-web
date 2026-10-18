@@ -13,7 +13,9 @@ export default defineConfig({
       reportsDirectory: "coverage",
       all: true,
       include: ["lib/**/*.ts", "app/**/route.ts", "app/error.tsx", "app/page.tsx", "components/**/*.tsx"],
-      exclude: ["**/*.test.ts", "**/*.d.ts"],
+      // `.tsx` matters: components.test.tsx was being measured as if it were production code, so every mock handler a
+      // test did not happen to call counted as an uncovered function and pulled the components/** number down.
+      exclude: ["**/*.test.ts", "**/*.test.tsx", "**/*.d.ts"],
       // Ratchet: a little below what is achieved today, so any drop fails the run. Raise when coverage rises.
       thresholds: {
         "lib/**": { statements: 99, lines: 99, functions: 100, branches: 98 },
