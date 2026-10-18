@@ -64,6 +64,41 @@ describe("CreateQuizForm", () => {
       body: { sourceUrl: "https://raw.githubusercontent.com/o/t/main/R.md" },
     });
   });
+  // A document in the list has been read before, so there is a saved copy; the box is what asks for the current
+  // version instead. It has nothing to offer for a URL nobody has read, so it is not shown then.
+  it("offers to download a listed document again, and sends refresh when ticked", async () => {
+    route({ "GET /v1/catalog": () => ({ items: [entry()] }), "POST /v1/quizzes": () => ({ quiz: { id: "q-3" } }) });
+    render(<CreateQuizForm />);
+    await screen.findByText(/Voice agents/);
+
+    const box = screen.getByLabelText(/Download the document again/);
+    expect((box as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByText(/Uses the copy saved/)).toBeTruthy();
+
+    fireEvent.click(box);
+    expect(screen.getByText(/Reads the current version/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate quiz" }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/app/quiz/q-3"));
+    expect(apiMock.mock.calls.find(([p]) => p === "/v1/quizzes")![1]!).toMatchObject({ body: { refresh: true } });
+  });
+
+  it("does not offer it for a pasted URL, and sends refresh false by default", async () => {
+    route({ "GET /v1/catalog": () => ({ items: [entry()] }), "POST /v1/quizzes": () => ({ quiz: { id: "q-4" } }) });
+    render(<CreateQuizForm />);
+    await screen.findByText(/Voice agents/);
+    expect(apiMock.mock.calls.length).toBeGreaterThan(0);
+
+    fireEvent.focus(screen.getByLabelText("Document"));
+    fireEvent.mouseDown(screen.getByText("Other: paste a URL…"));
+    expect(screen.queryByLabelText(/Download the document again/)).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Markdown URL"), { target: { value: "https://raw.githubusercontent.com/o/r/main/R.md" } });
+    fireEvent.click(screen.getByRole("button", { name: "Generate quiz" }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/app/quiz/q-4"));
+    expect(apiMock.mock.calls.find(([p]) => p === "/v1/quizzes")![1]!).toMatchObject({ body: { refresh: false } });
+  });
+
   it("falls back to a pasted URL when the catalog fails, and shows a message for an empty URL", async () => {
     route({ "GET /v1/catalog": () => new Error("down") });
     render(<CreateQuizForm />);
