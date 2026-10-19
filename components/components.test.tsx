@@ -537,15 +537,17 @@ describe("the document review flow", () => {
     });
     const { container } = render(<ReviewQueue />);
     await screen.findByText("Elasticsearch");
-    expect(container.textContent).toContain("0.97");
-    expect(container.textContent).toContain("the classifier scored");
-    expect(container.textContent).toMatch(/adds this document to the list everyone/i);
+    expect(container.textContent).toContain("0.97"); // the score is in the row, not hidden
 
-    fireEvent.click(screen.getByRole("button", { name: /approve and add/i }));
-    await screen.findByRole("button", { name: /remove from the list/i });
-    expect(screen.getByText("Elasticsearch")).toBeTruthy();
-    expect(container.textContent).toMatch(/Approved and in the list/i);
-    expect(container.textContent).toMatch(/by admin/i);
+    // the evidence is one click away rather than in every row, so twenty requests still fit on a screen
+    fireEvent.click(screen.getByRole("button", { name: /Elasticsearch/ }));
+    expect(container.textContent).toContain("the classifier scored");
+    expect(container.textContent).toMatch(/this is not an attack/i);
+
+    fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+    await screen.findByRole("button", { name: /remove/i });
+    expect(screen.getByText("Elasticsearch")).toBeTruthy(); // the row stays, with its new state
+    expect(container.textContent).toMatch(/In the list/i);
   });
 
   it("an approval can be taken back, and the row says so afterwards", async () => {
@@ -556,21 +558,25 @@ describe("the document review flow", () => {
       "POST /v1/document-requests/req-3/review": () => ({ ...item, status: "revoked" }),
     });
     const { container } = render(<ReviewQueue />);
+    await screen.findByRole("button", { name: /In the list/ }); // the filter, not a row
+    fireEvent.click(screen.getByRole("button", { name: /In the list/ }));
     await screen.findByText("Taken back");
-    expect(screen.queryByRole("button", { name: /approve and add/i })).toBeNull(); // already decided
-    fireEvent.click(screen.getByRole("button", { name: /remove from the list/i }));
-    await waitFor(() => expect(container.textContent).toMatch(/taken back out of the list/i));
-    expect(screen.queryByRole("button", { name: /remove from the list/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^approve$/i })).toBeNull(); // already decided
+
+    fireEvent.click(screen.getByRole("button", { name: /^remove$/i }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: /^remove$/i })).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: /Refused/ }));
+    await waitFor(() => expect(container.textContent).toMatch(/taken back/i));
   });
 
   it("a rejected request is listed as history, with nothing to press", async () => {
     const item = { id: "req-4", url: "https://raw.githubusercontent.com/o/r/HEAD/R.md", title: "Said no", description: null, note: null, status: "rejected", detectorScore: 0.91, excerpt: "x", createdAt: "2026-10-16T00:00:00.000Z", reviewedAt: "2026-10-17T00:00:00.000Z", reviewNote: null, reviewedBy: "admin" };
     apiMock.mockReset();
     route({ "GET /v1/document-requests": () => ({ items: [item] }) });
-    const { container } = render(<ReviewQueue />);
+    render(<ReviewQueue />);
+    fireEvent.click(await screen.findByRole("button", { name: /Refused/ }));
     await screen.findByText("Said no");
-    expect(container.textContent).toMatch(/Already decided/i);
-    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^approve$|^reject$|^remove$/i })).toBeNull(); // nothing to press
   });
 
   it("keeps the request on screen and says what happened when the decision fails", async () => {
@@ -587,7 +593,54 @@ describe("the document review flow", () => {
     apiMock.mockReset();
     route({ "GET /v1/document-requests": () => ({ items: [] }) });
     render(<ReviewQueue />);
-    await waitFor(() => expect(screen.getByText(/nothing is waiting/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Nothing here yet/i)).toBeTruthy());
+  });
+
+  it("filters by text, and says so when nothing matches", async () => {
+    const mk = (id: string, title: string, url: string) => ({ id, url, title, description: null, note: null, status: "pending", detectorScore: 0.95, excerpt: "x", createdAt: "2026-10-16T00:00:00.000Z", reviewedAt: null, reviewNote: null, reviewedBy: null });
+    apiMock.mockReset();
+    route({ "GET /v1/document-requests": () => ({ items: [mk("a", "Elasticsearch", "https://raw.githubusercontent.com/elastic/elasticsearch/main/README.asciidoc"), mk("b", "Hono", "https://raw.githubusercontent.com/honojs/hono/main/README.md")] }) });
+    render(<ReviewQueue />);
+    await screen.findByText("Elasticsearch");
+
+    const box = screen.getByLabelText("Filter requests");
+    fireEvent.change(box, { target: { value: "hono" } }); // matches the title
+    expect(screen.queryByText("Elasticsearch")).toBeNull();
+    fireEvent.change(box, { target: { value: "elastic/elasticsearch" } }); // and the URL
+    expect(screen.getByText("Elasticsearch")).toBeTruthy();
+    fireEvent.change(box, { target: { value: "zzzz" } });
+    expect(screen.getByText(/No request matches/i)).toBeTruthy();
+  });
+
+  it("copes with a request that has no score, no excerpt and an unparseable URL", async () => {
+    apiMock.mockReset();
+    route({
+      "GET /v1/document-requests": () => ({
+        items: [{ id: "odd", url: "not a url at all", title: "Odd one", description: "A description", note: "A reason", status: "pending", detectorScore: null, excerpt: null, createdAt: "2026-10-16T00:00:00.000Z", reviewedAt: null, reviewNote: null, reviewedBy: null }],
+      }),
+    });
+    const { container } = render(<ReviewQueue />);
+    await screen.findByText("Odd one");
+    expect(container.textContent).toContain("?"); // the score cell, with nothing to show
+    expect(container.textContent).toContain("not a url at all"); // the host helper falls back to the raw string
+    fireEvent.click(screen.getByRole("button", { name: /Odd one/ }));
+    expect(screen.getByText(/No excerpt was recorded/i)).toBeTruthy();
+    expect(screen.getByText("A reason")).toBeTruthy();
+    expect(screen.getByText("A description")).toBeTruthy();
+  });
+
+  it("shows a short reviewer id and a readable date once decided", async () => {
+    apiMock.mockReset();
+    route({
+      "GET /v1/document-requests": () => ({
+        items: [{ id: "d", url: "https://raw.githubusercontent.com/o/r/main/R.md", title: "Decided", description: null, note: null, status: "approved", detectorScore: 0.93, excerpt: "x", createdAt: "2026-10-16T00:00:00.000Z", reviewedAt: "2026-10-18T00:00:00.000Z", reviewNote: null, reviewedBy: "417bb510-10a1-7065-a227-f3c8929e920e" }],
+      }),
+    });
+    const { container } = render(<ReviewQueue />);
+    fireEvent.click(await screen.findByRole("button", { name: /In the list/ }));
+    await screen.findByRole("button", { name: /Decided/ }); // the row's own toggle, not the column header
+    expect(container.textContent).toContain("417bb510…"); // not 36 characters of UUID
+    expect(container.textContent).not.toContain("f3c8929e920e");
   });
 
   it("tells a non-admin that the queue is not for them", async () => {
