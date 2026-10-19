@@ -73,3 +73,54 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-
 .combo-opt.active, .combo-opt:hover { background: color-mix(in srgb, var(--brand) 12%, var(--surface)); }
 .combo-opt[aria-selected="true"] .combo-title { color: var(--brand); }
 .combo-title { font-weight: 600; }
+
+/* ---- the review queue: a table, because this list only grows and the job is to scan it ---- */
+.toolbar { gap: 10px; margin: 4px 0 14px; }
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+.segmented button { border: 0; border-right: 1px solid var(--border); background: var(--surface); color: var(--muted);
+  font: inherit; font-size: 14px; padding: 7px 13px; cursor: pointer; }
+.segmented button:last-child { border-right: 0; }
+.segmented button[aria-pressed="true"] { background: var(--brand); color: var(--brand-ink); font-weight: 600; }
+.segmented .n { opacity: .7; font-variant-numeric: tabular-nums; margin-left: 3px; }
+.filter { flex: 1; min-width: 200px; max-width: 420px; }
+
+table.requests { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+table.requests th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+  font-weight: 600; padding: 0 12px 8px; border-bottom: 1px solid var(--border); }
+table.requests td { padding: 11px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+table.requests tr.open > td { border-bottom-color: transparent; }
+table.requests .num, table.requests .right { text-align: right; }
+table.requests .right .row { justify-content: flex-end; }
+.gap { gap: 8px; }
+.score-cell { font-variant-numeric: tabular-nums; color: var(--bad); }
+.host { display: block; }
+.disclose { border: 0; background: none; color: var(--text); font: inherit; font-weight: 600; cursor: pointer; padding: 0; text-align: left; }
+.disclose:hover { color: var(--brand); }
+.btn.small { padding: 5px 12px; font-size: 13.5px; }
+
+tr.details > td { padding-top: 0; background: var(--bg); }
+/* What you just decided stays put, marked, instead of vanishing out from under the filter. */
+table.requests tr.just-decided > td:first-child { box-shadow: inset 3px 0 0 var(--brand); }
+.chip.pending { background: var(--warn-bg); color: var(--warn); }
+.chip.approved { background: var(--ok-bg); color: var(--ok); }
+.chip.rejected, .chip.revoked { background: var(--bad-bg); color: var(--bad); }
+
+/* The score and the text it reacted to, side by side: one number to judge, one quote to read. */
+.evidence { display: flex; gap: 14px; margin: 12px 0; }
+.evidence .score { flex: 0 0 104px; display: flex; flex-direction: column; justify-content: center; align-items: center;
+  border-radius: 10px; background: var(--bad-bg); color: var(--bad); padding: 10px 6px; }
+.evidence .score b { font-size: 26px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.evidence .score span { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; opacity: .85; text-align: center; }
+.evidence blockquote { flex: 1; margin: 0; padding: 10px 14px; border-left: 3px solid var(--border); background: var(--surface);
+  border-radius: 0 8px 8px 0; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+
+/* Label/value pairs read faster than sentences when every row has the same few facts. */
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0 0 8px; font-size: 14px; }
+.facts dt { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; padding-top: 2px; }
+.facts dd { margin: 0; }
+.empty { border: 1px dashed var(--border); border-radius: 10px; padding: 16px; margin: 8px 0 0; }
+@media (max-width: 620px) {
+  .evidence { flex-direction: column; } .evidence .score { flex-direction: row; gap: 8px; }
+  .facts { grid-template-columns: 1fr; gap: 0; } .facts dt { margin-top: 8px; }
+  table.requests th:nth-child(4), table.requests td:nth-child(4) { display: none; }
+}
