@@ -527,10 +527,14 @@ describe("the document review flow", () => {
     expect(apiMock).not.toHaveBeenCalled();
   });
 
-  it("shows the reviewer the score and the excerpt, and removes a decided request from the queue", async () => {
-    const item = { id: "req-1", url: "https://raw.githubusercontent.com/elastic/elasticsearch/main/README.asciidoc", title: "Elasticsearch", description: null, note: "Real project", status: "pending", detectorScore: 0.97, excerpt: "the classifier scored 0.97 for prompt injection", createdAt: "2026-10-16T00:00:00.000Z", reviewedAt: null, reviewNote: null };
+  // A decided request STAYS on screen: an approval is a standing decision, and it has to remain visible to be undone.
+  it("shows the score and the excerpt, and keeps the request once it is approved — now with a way to take it back", async () => {
+    const item = { id: "req-1", url: "https://raw.githubusercontent.com/elastic/elasticsearch/main/README.asciidoc", title: "Elasticsearch", description: null, note: "Real project", status: "pending", detectorScore: 0.97, excerpt: "the classifier scored 0.97 for prompt injection", createdAt: "2026-10-16T00:00:00.000Z", reviewedAt: null, reviewNote: null, reviewedBy: null };
     apiMock.mockReset();
-    route({ "GET /v1/document-requests": () => ({ items: [item] }), "POST /v1/document-requests/req-1/review": () => ({ ...item, status: "approved" }) });
+    route({
+      "GET /v1/document-requests": () => ({ items: [item] }),
+      "POST /v1/document-requests/req-1/review": () => ({ ...item, status: "approved", reviewedAt: "2026-10-18T00:00:00.000Z", reviewedBy: "admin" }),
+    });
     const { container } = render(<ReviewQueue />);
     await screen.findByText("Elasticsearch");
     expect(container.textContent).toContain("0.97");
@@ -538,11 +542,39 @@ describe("the document review flow", () => {
     expect(container.textContent).toMatch(/adds this document to the list everyone/i);
 
     fireEvent.click(screen.getByRole("button", { name: /approve and add/i }));
-    await waitFor(() => expect(screen.queryByText("Elasticsearch")).toBeNull());
+    await screen.findByRole("button", { name: /remove from the list/i });
+    expect(screen.getByText("Elasticsearch")).toBeTruthy();
+    expect(container.textContent).toMatch(/Approved and in the list/i);
+    expect(container.textContent).toMatch(/by admin/i);
+  });
+
+  it("an approval can be taken back, and the row says so afterwards", async () => {
+    const item = { id: "req-3", url: "https://raw.githubusercontent.com/o/r/HEAD/README.md", title: "Taken back", description: null, note: null, status: "approved", detectorScore: 0.93, excerpt: "x", createdAt: "2026-10-16T00:00:00.000Z", reviewedAt: "2026-10-17T00:00:00.000Z", reviewNote: null, reviewedBy: "admin" };
+    apiMock.mockReset();
+    route({
+      "GET /v1/document-requests": () => ({ items: [item] }),
+      "POST /v1/document-requests/req-3/review": () => ({ ...item, status: "revoked" }),
+    });
+    const { container } = render(<ReviewQueue />);
+    await screen.findByText("Taken back");
+    expect(screen.queryByRole("button", { name: /approve and add/i })).toBeNull(); // already decided
+    fireEvent.click(screen.getByRole("button", { name: /remove from the list/i }));
+    await waitFor(() => expect(container.textContent).toMatch(/taken back out of the list/i));
+    expect(screen.queryByRole("button", { name: /remove from the list/i })).toBeNull();
+  });
+
+  it("a rejected request is listed as history, with nothing to press", async () => {
+    const item = { id: "req-4", url: "https://raw.githubusercontent.com/o/r/HEAD/R.md", title: "Said no", description: null, note: null, status: "rejected", detectorScore: 0.91, excerpt: "x", createdAt: "2026-10-16T00:00:00.000Z", reviewedAt: "2026-10-17T00:00:00.000Z", reviewNote: null, reviewedBy: "admin" };
+    apiMock.mockReset();
+    route({ "GET /v1/document-requests": () => ({ items: [item] }) });
+    const { container } = render(<ReviewQueue />);
+    await screen.findByText("Said no");
+    expect(container.textContent).toMatch(/Already decided/i);
+    expect(screen.queryByRole("button")).toBeNull();
   });
 
   it("keeps the request on screen and says what happened when the decision fails", async () => {
-    const item = { id: "req-2", url: "https://raw.githubusercontent.com/o/r/HEAD/README.md", title: "Something", description: null, note: null, status: "pending", detectorScore: 0.95, excerpt: "the classifier scored 0.95", createdAt: "2026-10-16T00:00:00.000Z", reviewedAt: null, reviewNote: null };
+    const item = { id: "req-2", url: "https://raw.githubusercontent.com/o/r/HEAD/README.md", title: "Something", description: null, note: null, status: "pending", detectorScore: 0.95, excerpt: "the classifier scored 0.95", createdAt: "2026-10-16T00:00:00.000Z", reviewedAt: null, reviewNote: null, reviewedBy: null };
     apiMock.mockReset();
     route({ "GET /v1/document-requests": () => ({ items: [item] }), "POST /v1/document-requests/req-2/review": () => new Error("the database is away") });
     render(<ReviewQueue />);
