@@ -14,7 +14,7 @@ import { ApiError, api } from "@/lib/api";
  */
 const FILTERS = [
   { key: "waiting", label: "Waiting", match: (r: DocumentRequest) => r.status === "pending" },
-  { key: "listed", label: "In the list", match: (r: DocumentRequest) => r.status === "approved" },
+  { key: "listed", label: "Approved", match: (r: DocumentRequest) => r.status === "approved" },
   { key: "refused", label: "Refused", match: (r: DocumentRequest) => r.status === "rejected" || r.status === "revoked" },
   { key: "all", label: "All", match: () => true },
 ] as const;
@@ -179,7 +179,7 @@ const Row = ({ children }: { children: React.ReactNode }) => <>{children}</>;
 
 const LABEL: Record<string, string> = {
   pending: "Waiting",
-  approved: "In the list",
+  approved: "Approved",
   rejected: "Rejected",
   revoked: "Taken back",
 };
