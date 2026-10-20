@@ -547,7 +547,7 @@ describe("the document review flow", () => {
     fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
     await screen.findByRole("button", { name: /remove/i });
     expect(screen.getByText("Elasticsearch")).toBeTruthy(); // the row stays, with its new state
-    expect(container.textContent).toMatch(/In the list/i);
+    expect(container.textContent).toMatch(/Approved/i);
   });
 
   it("an approval can be taken back, and the row says so afterwards", async () => {
@@ -558,8 +558,8 @@ describe("the document review flow", () => {
       "POST /v1/document-requests/req-3/review": () => ({ ...item, status: "revoked" }),
     });
     const { container } = render(<ReviewQueue />);
-    await screen.findByRole("button", { name: /In the list/ }); // the filter, not a row
-    fireEvent.click(screen.getByRole("button", { name: /In the list/ }));
+    await screen.findByRole("button", { name: /Approved/ }); // the filter, not a row
+    fireEvent.click(screen.getByRole("button", { name: /Approved/ }));
     await screen.findByText("Taken back");
     expect(screen.queryByRole("button", { name: /^approve$/i })).toBeNull(); // already decided
 
@@ -637,7 +637,7 @@ describe("the document review flow", () => {
       }),
     });
     const { container } = render(<ReviewQueue />);
-    fireEvent.click(await screen.findByRole("button", { name: /In the list/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Approved/ }));
     await screen.findByRole("button", { name: /Decided/ }); // the row's own toggle, not the column header
     expect(container.textContent).toContain("417bb510…"); // not 36 characters of UUID
     expect(container.textContent).not.toContain("f3c8929e920e");
